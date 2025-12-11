@@ -10,8 +10,10 @@
 """
 GitLab Generic Package Upload Script
 
-A standalone uv-compatible Python script that uploads files to GitLab's generic package registry
-with SHA256 checksum validation, retry logic, and rich progress output.
+A standalone uv-compatible Python script that uploads single or multiple files to GitLab's
+generic package registry with SHA256 checksum validation, retry logic, and rich progress output.
+Supports uploading multiple files from explicit file lists or directories.
+Features copy-paste friendly URL output to avoid terminal truncation.
 """
 
 import argparse
@@ -103,6 +105,83 @@ def calculate_sha256(file_path: Path) -> str:
     checksum = sha256_hash.hexdigest()
     logger.info(f"Calculated SHA256 checksum: {checksum}")
     return checksum
+
+
+def collect_files_to_upload(args: argparse.Namespace) -> list[tuple[Path, str]]:
+    """
+    Collect files to upload based on input mode (--files or --directory).
+
+    Args:
+        args: Parsed command-line arguments
+
+    Returns:
+        List of tuples containing (source_path, target_filename)
+
+    Raises:
+        ValueError: If file paths are invalid or file mappings are malformed
+        FileNotFoundError: If specified files or directory don't exist
+    """
+    files_to_upload: list[tuple[Path, str]] = []
+
+    if args.files:
+        # Parse file mappings if provided
+        file_mappings: dict[str, str] = {}
+        if args.file_mapping:
+            for mapping in args.file_mapping:
+                if mapping.count(":") != 1:
+                    raise ValueError(
+                        f"Invalid file mapping format '{mapping}'. "
+                        "Expected format: 'local.bin:remote.bin'"
+                    )
+                local_name, remote_name = mapping.split(":", 1)
+                file_mappings[local_name] = remote_name
+
+        # Validate that file mappings reference files in the --files list
+        if file_mappings:
+            files_set = {Path(f).name for f in args.files}
+            for local_name in file_mappings.keys():
+                if local_name not in files_set:
+                    raise ValueError(
+                        f"File mapping references '{local_name}' which is not in --files list"
+                    )
+
+        # Process each file
+        for file_path_str in args.files:
+            source_path = Path(file_path_str)
+            if not source_path.exists():
+                raise FileNotFoundError(f"File not found: {source_path}")
+            if not source_path.is_file():
+                raise ValueError(f"Path is not a file: {source_path}")
+
+            # Apply mapping if exists, otherwise use original filename
+            target_filename = file_mappings.get(source_path.name, source_path.name)
+            files_to_upload.append((source_path, target_filename))
+
+    elif args.directory:
+        directory_path = Path(args.directory)
+        if not directory_path.exists():
+            raise FileNotFoundError(f"Directory not found: {directory_path}")
+        if not directory_path.is_dir():
+            raise ValueError(f"Path is not a directory: {directory_path}")
+
+        # Collect only top-level files (not subdirectories)
+        for item in directory_path.iterdir():
+            if item.is_file():
+                files_to_upload.append((item, item.name))
+
+        if not files_to_upload:
+            logger.warning(f"No files found in directory: {directory_path}")
+
+    # Check for duplicate target filenames
+    target_filenames = [target for _, target in files_to_upload]
+    duplicates = [name for name in target_filenames if target_filenames.count(name) > 1]
+    if duplicates:
+        unique_duplicates = list(set(duplicates))
+        raise ValueError(
+            f"Duplicate target filenames detected: {', '.join(unique_duplicates)}"
+        )
+
+    return files_to_upload
 
 
 def upload_file_with_retry(
@@ -246,19 +325,115 @@ def validate_upload(
         return False
 
 
+def process_single_file(
+    gl: Gitlab,
+    project_id: int,
+    source_path: Path,
+    target_filename: str,
+    package_name: str,
+    version: str,
+    gitlab_url: str,
+) -> tuple[bool, str]:
+    """
+    Process upload and validation for a single file.
+
+    Args:
+        gl: Authenticated GitLab client
+        project_id: GitLab project ID
+        source_path: Path to source file
+        target_filename: Target filename in registry
+        package_name: Package name in registry
+        version: Package version
+        gitlab_url: GitLab instance URL
+
+    Returns:
+        Tuple of (success: bool, result: str) where result is either download_url on success or error_message on failure
+    """
+    try:
+        logger.info(f"Processing file: {source_path.name} -> {target_filename}")
+
+        # Calculate local file checksum
+        logger.info(f"Calculating checksum for {source_path.name}...")
+        local_checksum = calculate_sha256(source_path)
+
+        # Upload file with retry logic
+        upload_success = upload_file_with_retry(
+            gl=gl,
+            project_id=project_id,
+            file_path=source_path,
+            package_name=package_name,
+            version=version,
+            target_filename=target_filename,
+        )
+
+        if not upload_success:
+            return False, "Upload failed after all retry attempts"
+
+        # Validate upload
+        logger.info(f"Validating upload for {target_filename}...")
+        validation_success = validate_upload(
+            gl=gl,
+            project_id=project_id,
+            package_name=package_name,
+            version=version,
+            filename=target_filename,
+            expected_sha256=local_checksum,
+        )
+
+        if not validation_success:
+            return False, "Upload validation failed"
+
+        # Generate download URL
+        download_url = (
+            f"{gitlab_url}/api/v4/projects/{project_id}/packages/generic/"
+            f"{package_name}/{version}/{target_filename}"
+        )
+
+        logger.info(f"Successfully uploaded {target_filename}")
+        return True, download_url
+
+    except Exception as e:
+        error_msg = f"Unexpected error: {str(e)}"
+        logger.error(error_msg)
+        return False, error_msg
+
+
 def main() -> None:
-    """Main function to handle argument parsing and orchestrate the upload process."""
+    """Main function to handle argument parsing and orchestrate the multi-file upload process."""
     parser = argparse.ArgumentParser(
-        description="Upload files to GitLab generic package registry with checksum validation"
+        description="Upload single or multiple files to GitLab generic package registry with checksum validation and copy-paste friendly URL reporting"
     )
-    parser.add_argument("file_path", type=str, help="Path to file to upload")
-    parser.add_argument("package_name", type=str, help="Package name in registry")
-    parser.add_argument("version", type=str, help="Package version")
+
+    # Required arguments
     parser.add_argument(
-        "--target-filename",
+        "--package-name",
         type=str,
-        default=None,
-        help="Target filename in registry (defaults to basename of file_path)",
+        required=True,
+        help="Package name in GitLab generic package registry",
+    )
+    parser.add_argument("--version", type=str, required=True, help="Package version")
+
+    # Mutually exclusive file input group
+    file_input_group = parser.add_mutually_exclusive_group(required=True)
+    file_input_group.add_argument(
+        "--files",
+        type=str,
+        nargs="+",
+        help="One or more file paths to upload (mutually exclusive with --directory)",
+    )
+    file_input_group.add_argument(
+        "--directory",
+        type=str,
+        help="Directory path to upload all top-level files (mutually exclusive with --files)",
+    )
+
+    # Optional arguments
+    parser.add_argument(
+        "--file-mapping",
+        type=str,
+        action="append",
+        help="Map source file to target filename (format: local.bin:remote.bin). "
+        "Can be specified multiple times. Only valid with --files.",
     )
     parser.add_argument(
         "--token",
@@ -275,26 +450,25 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # Validate file exists
-    file_path = Path(args.file_path)
-    if not file_path.exists():
-        logger.error(f"File not found: {file_path}")
-        sys.exit(1)
+    # Validate that --file-mapping is only used with --files
+    if args.file_mapping and not args.files:
+        parser.error("--file-mapping can only be used with --files")
 
-    # Determine target filename
-    target_filename = args.target_filename or file_path.name
-
-    logger.info(f"Starting upload process for {file_path}")
     logger.info(f"Package: {args.package_name}, Version: {args.version}")
-    logger.info(f"Target filename: {target_filename}")
 
     try:
+        # Collect files to upload
+        logger.info("Collecting files to upload...")
+        files_to_upload = collect_files_to_upload(args)
+
+        if not files_to_upload:
+            logger.error("No files to upload")
+            sys.exit(1)
+
+        logger.info(f"Found {len(files_to_upload)} file(s) to upload")
+
         # Get authentication token
         token = get_gitlab_token(args.token)
-
-        # Calculate local file checksum
-        logger.info("Calculating local file checksum...")
-        local_checksum = calculate_sha256(file_path)
 
         # Initialize GitLab client
         logger.info(f"Connecting to GitLab at {args.gitlab_url}")
@@ -305,54 +479,68 @@ def main() -> None:
         # Fetch project details to get human-readable path
         project = gl.projects.get(PROJECT_ID)
         project_path = project.path_with_namespace
-        logger.debug(f"Project path: {project_path}")
-
-        # Upload file with retry logic
         logger.info(f"Uploading to project {project_path}")
-        upload_success = upload_file_with_retry(
-            gl=gl,
-            project_id=PROJECT_ID,
-            file_path=file_path,
-            package_name=args.package_name,
-            version=args.version,
-            target_filename=target_filename,
-        )
 
-        if not upload_success:
-            logger.error("Upload failed after all retry attempts")
-            sys.exit(1)
+        # Initialize result lists
+        successful_uploads: list[tuple[str, str, str]] = []  # (source, target, url)
+        failed_uploads: list[tuple[str, str, str]] = []  # (source, target, error)
 
-        # Validate upload
-        logger.info("Validating upload...")
-        validation_success = validate_upload(
-            gl=gl,
-            project_id=PROJECT_ID,
-            package_name=args.package_name,
-            version=args.version,
-            filename=target_filename,
-            expected_sha256=local_checksum,
-        )
+        # Process each file
+        for source_path, target_filename in files_to_upload:
+            success, result = process_single_file(
+                gl=gl,
+                project_id=PROJECT_ID,
+                source_path=source_path,
+                target_filename=target_filename,
+                package_name=args.package_name,
+                version=args.version,
+                gitlab_url=args.gitlab_url,
+            )
 
-        if not validation_success:
-            logger.error("Upload validation failed")
-            sys.exit(1)
+            if success:
+                successful_uploads.append((str(source_path), target_filename, result))
+            else:
+                failed_uploads.append((str(source_path), target_filename, result))
 
-        # Construct download URL
-        download_url = (
-            f"{args.gitlab_url}/api/v4/projects/{PROJECT_ID}/packages/generic/"
-            f"{args.package_name}/{args.version}/{target_filename}"
-        )
+        # Print summary table
+        console.print("\n[bold]Upload Summary[/bold]\n")
 
-        # Print download URL
-        console.print(f"[bold cyan]Download URL:[/bold cyan] {download_url}")
+        if successful_uploads:
+            console.print("[bold green]✓ Successful Uploads[/bold green]\n")
+            for source, target, url in successful_uploads:
+                console.print(f"[cyan]Source File:[/cyan] {source}")
+                console.print(f"[cyan]Target Filename:[/cyan] {target}")
+                console.print(f"[cyan]Download URL:[/cyan] [blue]{url}[/blue]")
+                console.print()  # Add blank line between entries
 
+        if failed_uploads:
+            console.print("[bold red]✗ Failed Uploads[/bold red]\n")
+            for source, target, error in failed_uploads:
+                console.print(f"[cyan]Source File:[/cyan] {source}")
+                console.print(f"[cyan]Target Filename:[/cyan] {target}")
+                console.print(f"[cyan]Error:[/cyan] [red]{error}[/red]")
+                console.print()  # Add blank line between entries
+
+        # Print final status
         console.print(
-            f"[bold green]✓[/bold green] Successfully uploaded {target_filename} "
-            f"to {args.package_name} v{args.version}"
+            f"\n[bold]Results:[/bold] {len(successful_uploads)} succeeded, "
+            f"{len(failed_uploads)} failed out of {len(files_to_upload)} total"
         )
-        sys.exit(0)
+
+        # Exit with appropriate code
+        if failed_uploads:
+            sys.exit(1)
+        else:
+            console.print(
+                f"\n[bold green]✓[/bold green] All files successfully uploaded to "
+                f"{args.package_name} v{args.version}"
+            )
+            sys.exit(0)
 
     except ValueError as e:
+        logger.error(str(e))
+        sys.exit(1)
+    except FileNotFoundError as e:
         logger.error(str(e))
         sys.exit(1)
     except GitlabAuthenticationError as e:
