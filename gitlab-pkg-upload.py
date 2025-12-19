@@ -27,14 +27,7 @@ from pathlib import Path
 from gitlab.exceptions import GitlabAuthenticationError
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.progress import (
-    BarColumn,
-    DownloadColumn,
-    Progress,
-    TextColumn,
-    TimeRemainingColumn,
-    TransferSpeedColumn,
-)
+from rich.status import Status
 
 from gitlab import Gitlab
 
@@ -283,19 +276,15 @@ def upload_file_with_retry(
                 f"Upload attempt {attempt + 1}/{max_retries} for {target_filename}"
             )
 
-            # Create progress bar
-            with Progress(
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                DownloadColumn(),
-                TransferSpeedColumn(),
-                TimeRemainingColumn(),
-                console=console,
-            ) as progress:
-                task = progress.add_task(
-                    f"Uploading {target_filename}", total=file_path.stat().st_size
-                )
+            # Use spinner with elapsed time since GitLab API doesn't provide upload progress
+            file_size_mb = file_path.stat().st_size / (1024 * 1024)
+            start_time = time.time()
 
+            with Status(
+                f"[bold blue]Uploading {target_filename} ({file_size_mb:.2f} MB)...[/bold blue]",
+                console=console,
+                spinner="dots",
+            ):
                 # Upload file to generic packages
                 project.generic_packages.upload(
                     package_name=package_name,
@@ -304,7 +293,12 @@ def upload_file_with_retry(
                     path=file_path.as_posix(),
                 )
 
-                progress.update(task, completed=file_path.stat().st_size)
+            elapsed = time.time() - start_time
+            speed_mbps = file_size_mb / elapsed if elapsed > 0 else 0
+            console.print(
+                f"[green]✓[/green] Uploaded {target_filename} "
+                f"({file_size_mb:.2f} MB in {elapsed:.1f}s, {speed_mbps:.2f} MB/s)"
+            )
 
             logger.info(f"Upload successful: {target_filename}")
             return True
