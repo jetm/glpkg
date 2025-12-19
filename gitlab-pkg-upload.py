@@ -184,6 +184,73 @@ def collect_files_to_upload(args: argparse.Namespace) -> list[tuple[Path, str]]:
     return files_to_upload
 
 
+def delete_existing_files(
+    gl: Gitlab,
+    project_id: int,
+    package_name: str,
+    version: str,
+    filename: str,
+) -> int:
+    """
+    Delete existing files with the same name from the package.
+
+    This enables replacing files in the registry rather than creating duplicates.
+
+    Args:
+        gl: Authenticated GitLab client
+        project_id: GitLab project ID
+        package_name: Package name in registry
+        version: Package version
+        filename: Filename to delete
+
+    Returns:
+        Number of files deleted
+    """
+    deleted_count = 0
+
+    try:
+        project = gl.projects.get(project_id)
+        packages = project.packages.list(package_name=package_name, get_all=True)
+
+        target_package = next((p for p in packages if p.version == version), None)
+
+        if not target_package:
+            logger.debug(
+                f"Package {package_name} v{version} not found, nothing to delete"
+            )
+            return 0
+
+        # Get package files
+        package_obj = project.packages.get(target_package.id)
+        package_files = package_obj.package_files.list(get_all=True)
+
+        # Find all files matching the target filename
+        matching_files = [f for f in package_files if f.file_name == filename]
+
+        if not matching_files:
+            logger.debug(f"No existing files named {filename} found")
+            return 0
+
+        # Delete all matching files
+        for file_obj in matching_files:
+            try:
+                logger.info(f"Deleting existing file: {filename} (ID: {file_obj.id})")
+                file_obj.delete()
+                deleted_count += 1
+            except Exception as e:
+                logger.warning(
+                    f"Failed to delete file {filename} (ID: {file_obj.id}): {e}"
+                )
+
+        if deleted_count > 0:
+            logger.info(f"Deleted {deleted_count} existing file(s) named {filename}")
+
+    except Exception as e:
+        logger.warning(f"Error checking for existing files: {e}")
+
+    return deleted_count
+
+
 def upload_file_with_retry(
     gl: Gitlab,
     project_id: int,
@@ -355,6 +422,15 @@ def process_single_file(
         # Calculate local file checksum
         logger.info(f"Calculating checksum for {source_path.name}...")
         local_checksum = calculate_sha256(source_path)
+
+        # Delete existing files with the same name to enable replacement
+        delete_existing_files(
+            gl=gl,
+            project_id=project_id,
+            package_name=package_name,
+            version=version,
+            filename=target_filename,
+        )
 
         # Upload file with retry logic
         upload_success = upload_file_with_retry(
