@@ -22,7 +22,10 @@ import logging
 import os
 import sys
 import time
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
+from typing import Optional
 
 from gitlab.exceptions import GitlabAuthenticationError
 from rich.console import Console
@@ -45,6 +48,274 @@ logging.basicConfig(
     handlers=[RichHandler(console=console, rich_tracebacks=True)],
 )
 logger = logging.getLogger(__name__)
+
+
+# Data Models and Enums
+
+
+@dataclass
+class FileFingerprint:
+    """Represents a unique identifier for files to enable accurate duplicate detection."""
+
+    source_path: str
+    target_filename: str
+    sha256_checksum: str
+    file_size: int
+    timestamp: float
+
+
+@dataclass
+class RemoteFile:
+    """Represents a file that exists in the GitLab package registry."""
+
+    file_id: int
+    filename: str
+    sha256_checksum: Optional[str]
+    file_size: int
+    download_url: str
+    package_name: str
+    version: str
+
+
+class DuplicatePolicy(Enum):
+    """Defines how the system should handle detected duplicates."""
+
+    SKIP = "skip"  # Skip uploading duplicates (default)
+    REPLACE = "replace"  # Delete existing and upload new
+    ERROR = "error"  # Fail with error on duplicates
+
+
+@dataclass
+class UploadResult:
+    """Enhanced upload result structure with duplicate detection information."""
+
+    source_path: str
+    target_filename: str
+    success: bool
+    result: str  # URL on success, error message on failure
+    was_duplicate: bool = False
+    duplicate_action: Optional[str] = None  # "skipped", "replaced", "error"
+    existing_url: Optional[str] = None
+
+
+class DuplicateDetector:
+    """Core component responsible for detecting duplicates both locally (within session) and remotely (in GitLab registry)."""
+
+    def __init__(self, gitlab_client: Gitlab, project_id: int):
+        """
+        Initialize DuplicateDetector with GitLab client and project ID.
+
+        Args:
+            gitlab_client: Authenticated GitLab client
+            project_id: GitLab project ID
+        """
+        self.gl = gitlab_client
+        self.project_id = project_id
+        self.session_registry: dict[str, FileFingerprint] = {}
+
+    def check_session_duplicate(
+        self, file_path: Path, target_filename: str
+    ) -> Optional[FileFingerprint]:
+        """
+        Check if file was already processed in current session.
+
+        Args:
+            file_path: Path to the source file
+            target_filename: Target filename in registry
+
+        Returns:
+            FileFingerprint if duplicate found, None otherwise
+        """
+        logger.debug(f"Checking session duplicate for: {target_filename}")
+
+        # Check if target filename already exists in session registry
+        if target_filename in self.session_registry:
+            existing_fingerprint = self.session_registry[target_filename]
+            logger.debug(f"Found existing session entry for {target_filename}")
+
+            # Calculate checksum of current file to compare
+            current_checksum = calculate_sha256(file_path)
+
+            # Compare checksums to determine if it's truly a duplicate
+            if existing_fingerprint.sha256_checksum == current_checksum:
+                logger.info(
+                    f"Session duplicate detected: {target_filename} (checksum: {current_checksum})"
+                )
+                logger.info(
+                    f"Original source: {existing_fingerprint.source_path}, Current source: {file_path}"
+                )
+                return existing_fingerprint
+            else:
+                logger.warning(
+                    f"Same target filename {target_filename} but different content detected"
+                )
+                logger.warning(
+                    f"Existing checksum: {existing_fingerprint.sha256_checksum}, Current checksum: {current_checksum}"
+                )
+        else:
+            logger.debug(f"No session duplicate found for {target_filename}")
+
+        return None
+
+    def check_remote_duplicate(
+        self, package_name: str, version: str, filename: str, checksum: str
+    ) -> Optional[RemoteFile]:
+        """
+        Check if file exists in GitLab registry with retry logic.
+
+        Args:
+            package_name: Package name in registry
+            version: Package version
+            filename: Target filename
+            checksum: SHA256 checksum to compare
+
+        Returns:
+            RemoteFile if duplicate found, None otherwise
+        """
+        logger.info(
+            f"Starting remote duplicate check for {filename} in {package_name} v{version}"
+        )
+        logger.debug(f"Local checksum to compare: {checksum}")
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                logger.debug(
+                    f"Remote duplicate check attempt {attempt + 1}/{MAX_RETRIES} for {filename}"
+                )
+
+                project = self.gl.projects.get(self.project_id)
+                packages = project.packages.list(
+                    package_name=package_name, get_all=True
+                )
+
+                # Find the target package version
+                target_package = next(
+                    (p for p in packages if p.version == version), None
+                )
+
+                if not target_package:
+                    logger.debug(
+                        f"Package {package_name} v{version} not found - no remote duplicate"
+                    )
+                    return None
+
+                logger.debug(
+                    f"Found package {package_name} v{version} (ID: {target_package.id})"
+                )
+
+                # Get package files
+                package_obj = project.packages.get(target_package.id)
+                package_files = package_obj.package_files.list(get_all=True)
+
+                logger.debug(f"Found {len(package_files)} files in package")
+
+                # Find files with matching filename
+                matching_files = [f for f in package_files if f.file_name == filename]
+
+                if not matching_files:
+                    logger.debug(
+                        f"No files named {filename} found in remote package - no duplicate"
+                    )
+                    return None
+
+                logger.debug(
+                    f"Found {len(matching_files)} file(s) with matching filename {filename}"
+                )
+
+                # Check for checksum matches
+                for pkg_file in matching_files:
+                    remote_sha256 = getattr(pkg_file, "file_sha256", None)
+
+                    if remote_sha256:
+                        logger.debug(
+                            f"Comparing checksums - Remote: {remote_sha256}, Local: {checksum}"
+                        )
+                        if remote_sha256.lower() == checksum.lower():
+                            logger.info(
+                                f"Remote duplicate detected: {filename} (checksum: {checksum})"
+                            )
+                            logger.info(
+                                f"Remote file ID: {pkg_file.id}, Size: {getattr(pkg_file, 'size', 'unknown')}"
+                            )
+
+                            # Generate download URL
+                            download_url = (
+                                f"{self.gl.api_url.replace('/api/v4', '')}/api/v4/projects/{self.project_id}/packages/generic/"
+                                f"{package_name}/{version}/{filename}"
+                            )
+
+                            return RemoteFile(
+                                file_id=pkg_file.id,
+                                filename=filename,
+                                sha256_checksum=remote_sha256,
+                                file_size=getattr(pkg_file, "size", 0),
+                                download_url=download_url,
+                                package_name=package_name,
+                                version=version,
+                            )
+                        else:
+                            logger.debug(
+                                f"File {filename} exists but checksum differs (remote: {remote_sha256}, local: {checksum})"
+                            )
+                    else:
+                        # Handle incomplete metadata gracefully - use file size as fallback
+                        logger.warning(
+                            f"Remote checksum not available for {filename}, using file size comparison"
+                        )
+                        logger.debug(
+                            f"Cannot verify duplicate without checksum for {filename}"
+                        )
+
+                logger.debug(
+                    f"No matching checksums found for {filename} - no remote duplicate"
+                )
+                return None
+
+            except Exception as e:
+                logger.warning(
+                    f"Remote duplicate check attempt {attempt + 1} failed for {filename}: {e}"
+                )
+
+                if attempt < MAX_RETRIES - 1:
+                    delay = RETRY_DELAYS[min(attempt, len(RETRY_DELAYS) - 1)]
+                    logger.info(
+                        f"Retrying remote duplicate check for {filename} in {delay} seconds..."
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.error(
+                        f"All {MAX_RETRIES} remote duplicate check attempts failed for {filename}"
+                    )
+                    return None
+
+        return None
+
+    def register_file(self, file_path: Path, target_filename: str, checksum: str):
+        """
+        Register file as processed in current session.
+
+        Args:
+            file_path: Path to the source file
+            target_filename: Target filename in registry
+            checksum: SHA256 checksum of the file
+        """
+        file_stats = file_path.stat()
+
+        fingerprint = FileFingerprint(
+            source_path=str(file_path),
+            target_filename=target_filename,
+            sha256_checksum=checksum,
+            file_size=file_stats.st_size,
+            timestamp=time.time(),
+        )
+
+        self.session_registry[target_filename] = fingerprint
+        logger.info(
+            f"Registered file in session: {target_filename} (checksum: {checksum})"
+        )
+        logger.debug(
+            f"Session registry now contains {len(self.session_registry)} file(s)"
+        )
 
 
 def get_gitlab_token(cli_token: str | None) -> str:
@@ -175,6 +446,71 @@ def collect_files_to_upload(args: argparse.Namespace) -> list[tuple[Path, str]]:
         )
 
     return files_to_upload
+
+
+def handle_duplicate(
+    policy: DuplicatePolicy,
+    remote_file: RemoteFile,
+    detector: DuplicateDetector,
+    gl: Gitlab,
+    project_id: int,
+) -> tuple[str, str]:
+    """
+    Handle duplicate file according to policy.
+
+    Args:
+        policy: Duplicate handling policy
+        remote_file: Remote file that was found as duplicate
+        detector: DuplicateDetector instance
+        gl: GitLab client
+        project_id: Project ID
+
+    Returns:
+        Tuple of (action, result) where action is "skipped"/"replaced"/"error"
+        and result is URL or error message
+
+    Raises:
+        ValueError: If policy is ERROR and duplicate is found
+    """
+    logger.info(
+        f"Handling duplicate file {remote_file.filename} with policy: {policy.value}"
+    )
+    logger.debug(
+        f"Remote file details - ID: {remote_file.file_id}, Size: {remote_file.file_size}, Checksum: {remote_file.sha256_checksum}"
+    )
+
+    if policy == DuplicatePolicy.SKIP:
+        logger.info(
+            f"Policy decision: SKIP - Skipping duplicate file: {remote_file.filename}"
+        )
+        logger.info(f"Using existing file URL: {remote_file.download_url}")
+        return "skipped", remote_file.download_url
+
+    elif policy == DuplicatePolicy.REPLACE:
+        logger.info(
+            f"Policy decision: REPLACE - Replacing duplicate file: {remote_file.filename}"
+        )
+        logger.info("Deleting existing file(s) before upload")
+        deleted_count = delete_existing_files(
+            gl=gl,
+            project_id=project_id,
+            package_name=remote_file.package_name,
+            version=remote_file.version,
+            filename=remote_file.filename,
+        )
+        logger.info(f"Deleted {deleted_count} existing file(s), proceeding with upload")
+        return "replaced", "proceed_with_upload"
+
+    elif policy == DuplicatePolicy.ERROR:
+        error_msg = f"Policy decision: ERROR - Duplicate file detected: {remote_file.filename} (checksum: {remote_file.sha256_checksum})"
+        logger.error(error_msg)
+        logger.error(f"Existing file URL: {remote_file.download_url}")
+        raise ValueError(error_msg)
+
+    else:
+        error_msg = f"Unknown duplicate policy: {policy}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
 
 def delete_existing_files(
@@ -394,9 +730,11 @@ def process_single_file(
     package_name: str,
     version: str,
     gitlab_url: str,
-) -> tuple[bool, str]:
+    detector: DuplicateDetector,
+    duplicate_policy: DuplicatePolicy,
+) -> UploadResult:
     """
-    Process upload and validation for a single file.
+    Process upload and validation for a single file with duplicate detection.
 
     Args:
         gl: Authenticated GitLab client
@@ -406,25 +744,83 @@ def process_single_file(
         package_name: Package name in registry
         version: Package version
         gitlab_url: GitLab instance URL
+        detector: DuplicateDetector instance
+        duplicate_policy: How to handle duplicates
 
     Returns:
-        Tuple of (success: bool, result: str) where result is either download_url on success or error_message on failure
+        UploadResult with success status and details
     """
     try:
         logger.info(f"Processing file: {source_path.name} -> {target_filename}")
 
-        # Calculate local file checksum
+        # Check session duplicate before processing
+        session_duplicate = detector.check_session_duplicate(
+            source_path, target_filename
+        )
+        if session_duplicate:
+            logger.info(f"Session duplicate detected for {target_filename}, skipping")
+            return UploadResult(
+                source_path=str(source_path),
+                target_filename=target_filename,
+                success=True,
+                result="Skipped - already processed in this session",
+                was_duplicate=True,
+                duplicate_action="skipped",
+                existing_url=None,
+            )
+
+        # Calculate local file checksum for new files
         logger.info(f"Calculating checksum for {source_path.name}...")
         local_checksum = calculate_sha256(source_path)
 
-        # Delete existing files with the same name to enable replacement
-        delete_existing_files(
-            gl=gl,
-            project_id=project_id,
-            package_name=package_name,
-            version=version,
-            filename=target_filename,
+        # Check remote duplicate before upload
+        remote_duplicate = detector.check_remote_duplicate(
+            package_name, version, target_filename, local_checksum
         )
+
+        if remote_duplicate:
+            logger.info(f"Remote duplicate detected for {target_filename}")
+            try:
+                # Handle duplicates according to policy
+                action, result = handle_duplicate(
+                    duplicate_policy, remote_duplicate, detector, gl, project_id
+                )
+
+                if action == "skipped":
+                    return UploadResult(
+                        source_path=str(source_path),
+                        target_filename=target_filename,
+                        success=True,
+                        result=result,  # This is the download URL
+                        was_duplicate=True,
+                        duplicate_action="skipped",
+                        existing_url=result,
+                    )
+                elif action == "replaced":
+                    # Continue with upload after deletion
+                    logger.info(
+                        f"Proceeding with upload after replacing {target_filename}"
+                    )
+                # If action is "error", handle_duplicate will raise an exception
+
+            except ValueError as e:
+                return UploadResult(
+                    source_path=str(source_path),
+                    target_filename=target_filename,
+                    success=False,
+                    result=str(e),
+                    was_duplicate=True,
+                    duplicate_action="error",
+                )
+        else:
+            # No remote duplicate found, delete existing files with same name for replacement
+            delete_existing_files(
+                gl=gl,
+                project_id=project_id,
+                package_name=package_name,
+                version=version,
+                filename=target_filename,
+            )
 
         # Upload file with retry logic
         upload_success = upload_file_with_retry(
@@ -437,7 +833,12 @@ def process_single_file(
         )
 
         if not upload_success:
-            return False, "Upload failed after all retry attempts"
+            return UploadResult(
+                source_path=str(source_path),
+                target_filename=target_filename,
+                success=False,
+                result="Upload failed after all retry attempts",
+            )
 
         # Validate upload
         logger.info(f"Validating upload for {target_filename}...")
@@ -451,7 +852,12 @@ def process_single_file(
         )
 
         if not validation_success:
-            return False, "Upload validation failed"
+            return UploadResult(
+                source_path=str(source_path),
+                target_filename=target_filename,
+                success=False,
+                result="Upload validation failed",
+            )
 
         # Generate download URL
         download_url = (
@@ -459,13 +865,36 @@ def process_single_file(
             f"{package_name}/{version}/{target_filename}"
         )
 
+        # Register successfully processed files
+        detector.register_file(source_path, target_filename, local_checksum)
+
         logger.info(f"Successfully uploaded {target_filename}")
-        return True, download_url
+
+        # Check if this was a replaced duplicate
+        was_replaced_duplicate = remote_duplicate is not None
+        replaced_existing_url = (
+            remote_duplicate.download_url if remote_duplicate else None
+        )
+
+        return UploadResult(
+            source_path=str(source_path),
+            target_filename=target_filename,
+            success=True,
+            result=download_url,
+            was_duplicate=was_replaced_duplicate,
+            duplicate_action="replaced" if was_replaced_duplicate else None,
+            existing_url=replaced_existing_url,
+        )
 
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
         logger.error(error_msg)
-        return False, error_msg
+        return UploadResult(
+            source_path=str(source_path),
+            target_filename=target_filename,
+            success=False,
+            result=error_msg,
+        )
 
 
 def main() -> None:
@@ -517,6 +946,13 @@ def main() -> None:
         default=DEFAULT_GITLAB_URL,
         help=f"GitLab instance URL (default: {DEFAULT_GITLAB_URL})",
     )
+    parser.add_argument(
+        "--duplicate-policy",
+        type=str,
+        choices=["skip", "replace", "error"],
+        default="skip",
+        help="How to handle duplicate files: skip (default), replace, or error",
+    )
 
     args = parser.parse_args()
 
@@ -546,18 +982,26 @@ def main() -> None:
         gl.auth()
         logger.info("Authentication successful")
 
+        # Create detector instance in main function
+        detector = DuplicateDetector(gl, PROJECT_ID)
+        duplicate_policy = DuplicatePolicy(args.duplicate_policy)
+        logger.info(f"Using duplicate handling policy: {duplicate_policy.value}")
+
         # Fetch project details to get human-readable path
         project = gl.projects.get(PROJECT_ID)
         project_path = project.path_with_namespace
         logger.info(f"Uploading to project {project_path}")
 
-        # Initialize result lists
-        successful_uploads: list[tuple[str, str, str]] = []  # (source, target, url)
-        failed_uploads: list[tuple[str, str, str]] = []  # (source, target, error)
+        # Initialize result lists to track duplicate status
+        successful_uploads: list[
+            UploadResult
+        ] = []  # Successfully uploaded files (new uploads)
+        failed_uploads: list[UploadResult] = []  # Failed uploads
+        skipped_duplicates: list[UploadResult] = []  # Files skipped due to duplication
 
         # Process each file
         for source_path, target_filename in files_to_upload:
-            success, result = process_single_file(
+            result = process_single_file(
                 gl=gl,
                 project_id=PROJECT_ID,
                 source_path=source_path,
@@ -565,45 +1009,121 @@ def main() -> None:
                 package_name=args.package_name,
                 version=args.version,
                 gitlab_url=args.gitlab_url,
+                detector=detector,
+                duplicate_policy=duplicate_policy,
             )
 
-            if success:
-                successful_uploads.append((str(source_path), target_filename, result))
+            # Categorize results based on success and duplicate status
+            if result.success:
+                if result.was_duplicate and result.duplicate_action == "skipped":
+                    # Track skipped duplicates with existing URLs
+                    skipped_duplicates.append(result)
+                    logger.info(
+                        f"Categorized as skipped duplicate: {result.target_filename}"
+                    )
+                else:
+                    # Track successful uploads (including replaced duplicates)
+                    successful_uploads.append(result)
+                    logger.info(
+                        f"Categorized as successful upload: {result.target_filename}"
+                    )
             else:
-                failed_uploads.append((str(source_path), target_filename, result))
+                # Track failed uploads (including duplicate policy errors)
+                failed_uploads.append(result)
+                logger.info(f"Categorized as failed upload: {result.target_filename}")
 
-        # Print summary table
+        # Print summary table with enhanced duplicate detection reporting
         console.print("\n[bold]Upload Summary[/bold]\n")
 
         if successful_uploads:
             console.print("[bold green]✓ Successful Uploads[/bold green]\n")
-            for source, target, url in successful_uploads:
-                console.print(f"[cyan]Source File:[/cyan] {source}")
-                console.print(f"[cyan]Target Filename:[/cyan] {target}")
-                console.print(f"[cyan]Download URL:[/cyan] [blue]{url}[/blue]")
+            for result in successful_uploads:
+                console.print(f"[cyan]Source File:[/cyan] {result.source_path}")
+                console.print(f"[cyan]Target Filename:[/cyan] {result.target_filename}")
+                console.print(
+                    f"[cyan]Download URL:[/cyan] [blue]{result.result}[/blue]"
+                )
+
+                # Show if this was a replaced duplicate
+                if result.was_duplicate and result.duplicate_action == "replaced":
+                    console.print(
+                        "[cyan]Action:[/cyan] [yellow]Replaced existing duplicate[/yellow]"
+                    )
+                    if result.existing_url:
+                        console.print(
+                            f"[cyan]Previous URL:[/cyan] [dim]{result.existing_url}[/dim]"
+                        )
+
+                console.print()  # Add blank line between entries
+
+        if skipped_duplicates:
+            console.print("[bold yellow]⚠ Skipped Duplicates[/bold yellow]\n")
+            for result in skipped_duplicates:
+                console.print(f"[cyan]Source File:[/cyan] {result.source_path}")
+                console.print(f"[cyan]Target Filename:[/cyan] {result.target_filename}")
+                console.print(
+                    f"[cyan]Existing URL:[/cyan] [blue]{result.existing_url or result.result}[/blue]"
+                )
+                console.print(f"[cyan]Reason:[/cyan] {result.result}")
                 console.print()  # Add blank line between entries
 
         if failed_uploads:
             console.print("[bold red]✗ Failed Uploads[/bold red]\n")
-            for source, target, error in failed_uploads:
-                console.print(f"[cyan]Source File:[/cyan] {source}")
-                console.print(f"[cyan]Target Filename:[/cyan] {target}")
-                console.print(f"[cyan]Error:[/cyan] [red]{error}[/red]")
+            for result in failed_uploads:
+                console.print(f"[cyan]Source File:[/cyan] {result.source_path}")
+                console.print(f"[cyan]Target Filename:[/cyan] {result.target_filename}")
+                console.print(f"[cyan]Error:[/cyan] [red]{result.result}[/red]")
+                if result.was_duplicate:
+                    console.print(
+                        f"[cyan]Duplicate Action:[/cyan] {result.duplicate_action}"
+                    )
+                    if result.existing_url:
+                        console.print(
+                            f"[cyan]Existing URL:[/cyan] [blue]{result.existing_url}[/blue]"
+                        )
                 console.print()  # Add blank line between entries
 
-        # Print final status
+        # Print comprehensive statistics including duplicate detection
+        total_processed = (
+            len(successful_uploads) + len(skipped_duplicates) + len(failed_uploads)
+        )
+        replaced_count = sum(
+            1
+            for r in successful_uploads
+            if r.was_duplicate and r.duplicate_action == "replaced"
+        )
+        new_uploads_count = len(successful_uploads) - replaced_count
+
+        console.print("\n[bold]Duplicate Detection Statistics:[/bold]")
+        console.print(f"• New uploads: {new_uploads_count}")
+        console.print(f"• Replaced duplicates: {replaced_count}")
+        console.print(f"• Skipped duplicates: {len(skipped_duplicates)}")
+        console.print(f"• Failed uploads: {len(failed_uploads)}")
+        console.print(f"• Total processed: {total_processed}")
+
+        # Print final status distinguishing uploaded vs skipped
         console.print(
-            f"\n[bold]Results:[/bold] {len(successful_uploads)} succeeded, "
-            f"{len(failed_uploads)} failed out of {len(files_to_upload)} total"
+            f"\n[bold]Final Results:[/bold] {len(successful_uploads)} uploaded "
+            f"({new_uploads_count} new, {replaced_count} replaced), "
+            f"{len(skipped_duplicates)} skipped duplicates, "
+            f"{len(failed_uploads)} failed out of {total_processed} total"
         )
 
         # Exit with appropriate code
         if failed_uploads:
             sys.exit(1)
         else:
+            replaced_count = sum(
+                1
+                for r in successful_uploads
+                if r.was_duplicate and r.duplicate_action == "replaced"
+            )
+            new_uploads_count = len(successful_uploads) - replaced_count
+
             console.print(
-                f"\n[bold green]✓[/bold green] All files successfully uploaded to "
-                f"{args.package_name} v{args.version}"
+                f"\n[bold green]✓[/bold green] All files processed successfully for {args.package_name} v{args.version}: "
+                f"{new_uploads_count} new uploads, {replaced_count} replaced duplicates, "
+                f"{len(skipped_duplicates)} skipped duplicates"
             )
             sys.exit(0)
 
