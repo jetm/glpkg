@@ -269,7 +269,7 @@ class ScriptExecutor:
         if "package_name" in kwargs:
             command.extend(["--package-name", kwargs["package_name"]])
         if "version" in kwargs:
-            command.extend(["--version", kwargs["version"]])
+            command.extend(["--package-version", kwargs["version"]])
         if "files" in kwargs:
             if isinstance(kwargs["files"], list):
                 command.extend(["--files"] + kwargs["files"])
