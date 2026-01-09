@@ -1,10 +1,16 @@
-"""File validation utilities for GitLab package uploads."""
+"""Validation and utility functions for GitLab package uploads.
+
+This module provides file validation, Git URL parsing, and configuration utilities
+for the GitLab package upload workflow.
+"""
 
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 from gitlab_pkg_upload.models import ConfigurationError, FileValidationError
 
@@ -318,3 +324,279 @@ def collect_files(
         )
 
     return files_to_upload, file_errors
+
+
+def parse_git_url(url: str) -> tuple[str, str]:
+    """
+    Parse a Git remote URL and extract GitLab instance URL and project path.
+
+    Supports both HTTPS and SSH Git URL formats. Extracts the GitLab instance
+    base URL and the project path (namespace/project) from the remote URL.
+
+    Args:
+        url: Git remote URL in HTTPS or SSH format
+
+    Returns:
+        Tuple of (gitlab_url, project_path) where:
+        - gitlab_url: Base URL of the GitLab instance (e.g., "https://gitlab.com")
+        - project_path: Project path including namespace (e.g., "namespace/project")
+
+    Raises:
+        ConfigurationError: If the URL format is invalid or cannot be parsed
+
+    Examples:
+        HTTPS format:
+            >>> parse_git_url("https://gitlab.com/namespace/project.git")
+            ('https://gitlab.com', 'namespace/project')
+
+        SSH format:
+            >>> parse_git_url("git@gitlab.com:namespace/project.git")
+            ('https://gitlab.com', 'namespace/project')
+
+        Invalid format:
+            >>> parse_git_url("invalid-url")
+            ConfigurationError: Invalid Git URL format...
+    """
+    if not url or not isinstance(url, str):
+        raise ConfigurationError(
+            "Git URL must be a non-empty string. "
+            "Expected formats: 'https://gitlab.com/namespace/project.git' or "
+            "'git@gitlab.com:namespace/project.git'"
+        )
+
+    url = url.strip()
+
+    try:
+        # Detect URL format: SSH starts with 'git@', otherwise assume HTTPS
+        if url.startswith("git@"):
+            # SSH format: git@hostname:namespace/project.git
+            if ":" not in url:
+                raise ConfigurationError(
+                    f"Invalid SSH Git URL format: '{url}'. "
+                    "Expected format: 'git@gitlab.com:namespace/project.git'"
+                )
+
+            # Split on first ':' to separate host from path
+            host_part, path_part = url.split(":", 1)
+
+            # Extract hostname by removing 'git@' prefix
+            hostname = host_part[4:]  # Remove 'git@'
+            if not hostname:
+                raise ConfigurationError(
+                    f"Invalid SSH Git URL: missing hostname in '{url}'. "
+                    "Expected format: 'git@gitlab.com:namespace/project.git'"
+                )
+
+            # Process path: strip slashes, remove .git suffix
+            path = path_part.strip("/")
+            if path.endswith(".git"):
+                path = path[:-4]
+
+            # Validate path has at least namespace/project
+            path_components = path.split("/")
+            if len(path_components) < 2 or not all(path_components[:2]):
+                raise ConfigurationError(
+                    f"Invalid Git URL path: '{path}'. "
+                    "Path must contain at least namespace/project. "
+                    "Expected format: 'git@gitlab.com:namespace/project.git'"
+                )
+
+            gitlab_url = f"https://{hostname}"
+            project_path = "/".join(path_components)
+
+            return gitlab_url, project_path
+
+        else:
+            # HTTPS format: https://gitlab.com/namespace/project.git
+            parsed = urlparse(url)
+
+            if parsed.scheme != "https":
+                raise ConfigurationError(
+                    f"Invalid Git URL scheme: '{parsed.scheme}'. "
+                    "Expected 'https' for HTTPS Git URLs. "
+                    "Example: 'https://gitlab.com/namespace/project.git'"
+                )
+
+            if not parsed.netloc:
+                raise ConfigurationError(
+                    f"Invalid Git URL: missing hostname in '{url}'. "
+                    "Expected format: 'https://gitlab.com/namespace/project.git'"
+                )
+
+            # Process path: strip slashes, remove .git suffix
+            path = parsed.path.strip("/")
+            if path.endswith(".git"):
+                path = path[:-4]
+
+            # Validate path has at least namespace/project
+            path_components = path.split("/")
+            if len(path_components) < 2 or not all(path_components[:2]):
+                raise ConfigurationError(
+                    f"Invalid Git URL path: '{path}'. "
+                    "Path must contain at least namespace/project. "
+                    "Expected format: 'https://gitlab.com/namespace/project.git'"
+                )
+
+            gitlab_url = f"{parsed.scheme}://{parsed.netloc}"
+            project_path = "/".join(path_components)
+
+            return gitlab_url, project_path
+
+    except ConfigurationError:
+        raise
+    except Exception as e:
+        raise ConfigurationError(
+            f"Failed to parse Git URL '{url}': {e}. "
+            "Expected formats: 'https://gitlab.com/namespace/project.git' or "
+            "'git@gitlab.com:namespace/project.git'"
+        )
+
+
+def normalize_gitlab_url(url: str) -> tuple[str, str]:
+    """
+    Normalize a GitLab project URL by extracting instance URL and project path.
+
+    Standardizes GitLab project URLs by parsing and validating the URL structure,
+    then returning the base instance URL and the project path.
+
+    Args:
+        url: GitLab project URL (e.g., "https://gitlab.com/namespace/project")
+
+    Returns:
+        Tuple of (gitlab_url, project_path) where:
+        - gitlab_url: Base URL of the GitLab instance (e.g., "https://gitlab.com")
+        - project_path: Project path including namespace (e.g., "namespace/project")
+
+    Raises:
+        ConfigurationError: If the URL format is invalid, missing required components,
+            or uses an unsupported scheme
+
+    Examples:
+        Valid URL:
+            >>> normalize_gitlab_url("https://gitlab.com/namespace/project")
+            ('https://gitlab.com', 'namespace/project')
+
+        With trailing slash:
+            >>> normalize_gitlab_url("https://gitlab.com/namespace/project/")
+            ('https://gitlab.com', 'namespace/project')
+
+        Invalid (missing project):
+            >>> normalize_gitlab_url("https://gitlab.com/namespace")
+            ConfigurationError: Invalid GitLab URL path...
+    """
+    if not url or not isinstance(url, str):
+        raise ConfigurationError(
+            "GitLab URL must be a non-empty string. "
+            "Expected format: 'https://gitlab.com/namespace/project'"
+        )
+
+    # Strip trailing slashes
+    url = url.rstrip("/")
+
+    try:
+        parsed = urlparse(url)
+    except Exception as e:
+        raise ConfigurationError(
+            f"Failed to parse GitLab URL '{url}': {e}. "
+            "Expected format: 'https://gitlab.com/namespace/project'"
+        )
+
+    # Validate scheme
+    if parsed.scheme not in ("http", "https"):
+        raise ConfigurationError(
+            f"Invalid GitLab URL scheme: '{parsed.scheme}'. "
+            "Expected 'http' or 'https'. "
+            "Example: 'https://gitlab.com/namespace/project'"
+        )
+
+    # Validate hostname
+    if not parsed.netloc:
+        raise ConfigurationError(
+            f"Invalid GitLab URL: missing hostname in '{url}'. "
+            "Expected format: 'https://gitlab.com/namespace/project'"
+        )
+
+    # Extract and validate path
+    path = parsed.path.strip("/")
+    if not path:
+        raise ConfigurationError(
+            f"Invalid GitLab URL: missing project path in '{url}'. "
+            "Expected format: 'https://gitlab.com/namespace/project'"
+        )
+
+    # Split path into components
+    path_components = path.split("/")
+    if len(path_components) < 2:
+        raise ConfigurationError(
+            f"Invalid GitLab URL path: '{path}'. "
+            "Path must contain at least namespace/project. "
+            "Expected format: 'https://gitlab.com/namespace/project'"
+        )
+
+    namespace = path_components[0]
+    project_name = path_components[1]
+
+    # Validate namespace and project are non-empty
+    if not namespace:
+        raise ConfigurationError(
+            f"Invalid GitLab URL: empty namespace in '{url}'. "
+            "Expected format: 'https://gitlab.com/namespace/project'"
+        )
+    if not project_name:
+        raise ConfigurationError(
+            f"Invalid GitLab URL: empty project name in '{url}'. "
+            "Expected format: 'https://gitlab.com/namespace/project'"
+        )
+
+    gitlab_url = f"{parsed.scheme}://{parsed.netloc}"
+    project_path = f"{namespace}/{project_name}"
+
+    return gitlab_url, project_path
+
+
+def get_gitlab_token(cli_token: str | None = None) -> str:
+    """
+    Retrieve GitLab API token from CLI argument or environment variable.
+
+    Token sources are checked in priority order:
+    1. CLI argument (cli_token parameter)
+    2. GITLAB_TOKEN environment variable
+
+    Args:
+        cli_token: Optional token provided via CLI argument. Takes precedence
+            over environment variable if provided.
+
+    Returns:
+        GitLab API token string
+
+    Raises:
+        ConfigurationError: If no token is found from any source
+
+    Examples:
+        CLI token provided:
+            >>> get_gitlab_token("glpat-xxxxxxxxxxxxxxxxxxxx")
+            'glpat-xxxxxxxxxxxxxxxxxxxx'
+
+        Environment variable (when cli_token is None):
+            >>> os.environ["GITLAB_TOKEN"] = "glpat-yyyyyyyyyyyyyyyyyyyy"
+            >>> get_gitlab_token()
+            'glpat-yyyyyyyyyyyyyyyyyyyy'
+
+        No token available:
+            >>> get_gitlab_token()
+            ConfigurationError: No GitLab token provided...
+    """
+    # CLI argument takes precedence
+    if cli_token:
+        return cli_token
+
+    # Check environment variable
+    env_token = os.environ.get("GITLAB_TOKEN")
+    if env_token:
+        return env_token
+
+    # No token found
+    raise ConfigurationError(
+        "No GitLab token provided. "
+        "Set GITLAB_TOKEN environment variable or use --token argument"
+    )
