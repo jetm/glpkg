@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from pathlib import Path
 
-from gitlab_pkg_upload.models import FileValidationError
+from gitlab_pkg_upload.models import ConfigurationError, FileValidationError
 
 
 def validate_filename(filename: str) -> None:
@@ -77,3 +78,243 @@ def validate_file_exists(file_path: Path) -> None:
         raise FileValidationError(
             f"File is not readable: {file_path}. Check file permissions."
         )
+
+
+def calculate_sha256(file_path: Path) -> str:
+    """
+    Calculate SHA256 checksum of a file.
+
+    Reads the file in chunks for memory efficiency, making it suitable
+    for large files.
+
+    Args:
+        file_path: Path to the file to calculate checksum for
+
+    Returns:
+        Hexadecimal SHA256 digest string (64 characters)
+
+    Raises:
+        FileValidationError: If the file cannot be read
+
+    Examples:
+        >>> checksum = calculate_sha256(Path("package.tar.gz"))
+        >>> print(checksum)
+        'a1b2c3d4e5f6...'  # 64-character hex string
+    """
+    sha256_hash = hashlib.sha256()
+
+    try:
+        with open(file_path, "rb") as f:
+            # Read in chunks for memory efficiency
+            for chunk in iter(lambda: f.read(8192), b""):
+                sha256_hash.update(chunk)
+    except (IOError, OSError) as e:
+        raise FileValidationError(f"Failed to read file for checksum calculation: {file_path}. Error: {e}")
+
+    return sha256_hash.hexdigest()
+
+
+def parse_file_mapping(mappings: list[str], files: list[str]) -> dict[str, str]:
+    """
+    Parse file mapping strings into a dictionary.
+
+    File mappings allow renaming files during upload using the format
+    'source:target' where source is the local filename and target is
+    the desired remote filename.
+
+    Args:
+        mappings: List of mapping strings in 'source:target' format
+        files: List of file paths that mappings should reference
+
+    Returns:
+        Dictionary mapping local filenames to remote filenames
+
+    Raises:
+        ConfigurationError: If mapping format is invalid (not exactly one colon)
+            or if a local name in mapping doesn't exist in the files list
+
+    Examples:
+        Valid:
+            >>> parse_file_mapping(["local.bin:remote.bin"], ["path/to/local.bin"])
+            {'local.bin': 'remote.bin'}
+
+        Invalid (wrong format):
+            >>> parse_file_mapping(["invalid_mapping"], ["file.bin"])
+            ConfigurationError: Invalid file mapping format...
+
+        Invalid (file not in list):
+            >>> parse_file_mapping(["missing.bin:remote.bin"], ["other.bin"])
+            ConfigurationError: File mapping references 'missing.bin'...
+    """
+    file_mappings: dict[str, str] = {}
+
+    for mapping in mappings:
+        if mapping.count(":") != 1:
+            raise ConfigurationError(
+                f"Invalid file mapping format '{mapping}'. "
+                "Expected format: 'local.bin:remote.bin'"
+            )
+        local_name, remote_name = mapping.split(":", 1)
+        file_mappings[local_name] = remote_name
+
+    # Validate that file mappings reference files in the files list
+    if file_mappings:
+        files_set = {Path(f).name for f in files}
+        for local_name in file_mappings.keys():
+            if local_name not in files_set:
+                raise ConfigurationError(
+                    f"File mapping references '{local_name}' which is not in the files list"
+                )
+
+    return file_mappings
+
+
+def collect_files(
+    files: list[str] | None = None,
+    directory: str | None = None,
+    file_mappings: dict[str, str] | list[str] | None = None,
+) -> tuple[list[tuple[Path, str]], list[dict]]:
+    """
+    Collect files to upload based on input mode (files list or directory).
+
+    Supports two modes:
+    - Files mode: Explicitly list files to upload, with optional renaming via file_mappings
+    - Directory mode: Upload all files from a directory (top-level only)
+
+    Validates that all filenames contain only ASCII characters supported by GitLab.
+    File validation errors are collected rather than raised immediately, allowing
+    batch processing to continue with valid files.
+
+    Args:
+        files: List of file paths to upload (files mode)
+        directory: Directory path to upload files from (directory mode)
+        file_mappings: Optional dictionary mapping local filenames to remote filenames,
+            or a list of mapping strings in 'source:target' format.
+            Only applicable in files mode.
+
+    Returns:
+        Tuple of (files_to_upload, file_errors) where:
+        - files_to_upload: List of tuples containing (source_path, target_filename)
+        - file_errors: List of dicts with keys: source_path, target_filename,
+            error_message, error_type
+
+    Raises:
+        ConfigurationError: If directory doesn't exist, isn't a directory,
+            duplicate target filenames are detected, both files and directory
+            are provided, neither files nor directory is provided, or
+            file_mappings is an unsupported type.
+
+    Examples:
+        Files mode:
+            >>> files_to_upload, errors = collect_files(
+            ...     files=["path/to/file1.bin", "path/to/file2.bin"],
+            ...     file_mappings={"file1.bin": "renamed.bin"}
+            ... )
+
+        Directory mode:
+            >>> files_to_upload, errors = collect_files(directory="/path/to/uploads")
+    """
+    files_to_upload: list[tuple[Path, str]] = []
+    file_errors: list[dict] = []
+
+    # Validate mutually exclusive inputs
+    if files and directory:
+        raise ConfigurationError(
+            "Cannot specify both 'files' and 'directory'. They are mutually exclusive."
+        )
+    if not files and not directory:
+        raise ConfigurationError(
+            "Either 'files' or 'directory' must be provided."
+        )
+
+    # Handle file_mappings type conversion
+    if file_mappings is None:
+        file_mappings = {}
+    elif isinstance(file_mappings, list):
+        # Convert list of mapping strings to dict via parse_file_mapping
+        file_mappings = parse_file_mapping(file_mappings, files or [])
+    elif not isinstance(file_mappings, dict):
+        raise ConfigurationError(
+            f"file_mappings must be a dict or list of strings, got {type(file_mappings).__name__}"
+        )
+
+    if files:
+        # Files mode: process each file explicitly
+        for file_path_str in files:
+            source_path = Path(file_path_str)
+
+            # Determine target filename (apply mapping if exists)
+            target_filename = file_mappings.get(source_path.name, source_path.name)
+
+            # Validate file existence and type
+            try:
+                validate_file_exists(source_path)
+            except FileValidationError as e:
+                file_errors.append(
+                    {
+                        "source_path": str(source_path),
+                        "target_filename": target_filename,
+                        "error_message": str(e),
+                        "error_type": "FileValidationError",
+                    }
+                )
+                continue
+
+            # Validate filename for GitLab API compatibility
+            try:
+                validate_filename(target_filename)
+            except FileValidationError as e:
+                file_errors.append(
+                    {
+                        "source_path": str(source_path),
+                        "target_filename": target_filename,
+                        "error_message": str(e),
+                        "error_type": "FileValidationError",
+                    }
+                )
+                continue
+
+            files_to_upload.append((source_path, target_filename))
+
+    elif directory:
+        # Directory mode: collect all top-level files
+        directory_path = Path(directory)
+
+        if not directory_path.exists():
+            raise ConfigurationError(f"Directory not found: {directory_path}")
+        if not directory_path.is_dir():
+            raise ConfigurationError(f"Path is not a directory: {directory_path}")
+
+        # Collect only top-level files (not subdirectories)
+        for item in directory_path.iterdir():
+            if item.is_file():
+                # Validate filename for GitLab API compatibility
+                try:
+                    validate_filename(item.name)
+                except FileValidationError as e:
+                    file_errors.append(
+                        {
+                            "source_path": str(item),
+                            "target_filename": item.name,
+                            "error_message": str(e),
+                            "error_type": "FileValidationError",
+                        }
+                    )
+                    continue
+
+                files_to_upload.append((item, item.name))
+
+        if not files_to_upload and not file_errors:
+            # Log warning - no files found (caller may want to handle this)
+            pass
+
+    # Check for duplicate target filenames
+    target_filenames = [target for _, target in files_to_upload]
+    duplicates = [name for name in target_filenames if target_filenames.count(name) > 1]
+    if duplicates:
+        unique_duplicates = list(set(duplicates))
+        raise ConfigurationError(
+            f"Duplicate target filenames detected: {', '.join(unique_duplicates)}"
+        )
+
+    return files_to_upload, file_errors
