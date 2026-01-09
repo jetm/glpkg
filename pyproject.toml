@@ -78,4 +78,5 @@ markers = [
     "integration: Integration tests requiring GitLab API access",
     "fast: Fast-running tests",
     "slow: Slow-running tests",
+    "timeout: Timeout for test execution (provided by pytest-timeout)",
 ]
