@@ -1,23 +1,51 @@
 # glpkg
 
+![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)
+
 A CLI tool for uploading files to GitLab's Generic Package Registry.
 
 ## Installation
 
-### Using uv (Recommended)
+### From PyPI (Recommended)
 
 ```bash
-# Install in development mode
+# Using uv (recommended)
+uv pip install glpkg
+
+# Or using pip
+pip install glpkg
+```
+
+### Universal Binary (.pyz)
+
+Download the pre-built universal binary from GitHub releases:
+
+```bash
+# Download the latest release
+curl -L -o glpkg.pyz https://github.com/your-org/glpkg/releases/latest/download/glpkg.pyz
+
+# Make it executable
+chmod +x glpkg.pyz
+
+# Run directly
+./glpkg.pyz --help
+
+# Or run with Python
+python glpkg.pyz --help
+```
+
+### Development Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/glpkg.git
+cd glpkg
+
+# Install in development mode with uv
 uv pip install -e .
 
 # Or run directly without installing
 uv run glpkg --help
-```
-
-### Using pip
-
-```bash
-pip install -e .
 ```
 
 ## Usage
@@ -60,151 +88,35 @@ glpkg --json-output upload --package-name my-package --package-version 1.0.0 --f
 ### Token Permissions
 
 Your GitLab token requires:
+
 - `api` scope for full API access
 - Write access to the target project's Package Registry
 
 ## Development
 
-### Setup
+For detailed contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### Quick Start
 
 ```bash
-# Clone the repository
-git clone https://gitlab.com/your-namespace/glpkg.git
+# Clone and install dependencies
+git clone https://github.com/your-org/glpkg.git
 cd glpkg
-
-# Install with development dependencies
 uv sync --all-extras
 
-# Or using pip
-pip install -e ".[dev,test]"
-```
-
-### Pre-commit Hooks
-
-Pre-commit hooks automate code quality checks locally before each commit, ensuring consistency with the CI/CD pipeline.
-
-```bash
 # Install pre-commit hooks
 uv run pre-commit install
 
-# Or using pip
-pre-commit install
-```
-
-Once installed, hooks run automatically on `git commit`. You can also run them manually:
-
-```bash
-# Run all hooks on all files
-uv run pre-commit run --all-files
-
-# Update hook versions
-uv run pre-commit autoupdate
-```
-
-The configured hooks include:
-- **Ruff**: Linting and code formatting
-- **Mypy**: Static type checking with strict mode
-- **File maintenance**: Trailing whitespace removal, end-of-file fixes, YAML/TOML validation
-
-### Running Tests
-
-```bash
-# Install the package in development mode first
-uv pip install -e .
-
-# Run all tests
-uv run pytest tests/
-
-# Run only unit tests (fast, no external dependencies)
+# Run tests
 uv run pytest tests/unit/
-
-# Run integration tests (requires GITLAB_TOKEN)
-export GITLAB_TOKEN="your-token"
-uv run pytest tests/integration/ -m integration
-
-# Run with parallel execution
-uv run pytest tests/ -n auto
-
-# Run with verbose output
-uv run pytest tests/ -v
 ```
 
-See [tests/README.md](tests/README.md) for detailed testing documentation.
+### Documentation
 
-### Code Quality
-
-Pre-commit hooks automate these checks on every commit. See [Pre-commit Hooks](#pre-commit-hooks) for setup.
-
-To run checks manually:
-
-```bash
-# Run linter
-uv run ruff check src/
-
-# Run type checker
-uv run mypy src/
-
-# Format code
-uv run ruff format src/
-```
-
-### Versioning
-
-This project uses [semantic versioning](https://semver.org/) (major.minor.patch) with [bump-my-version](https://github.com/callowayproject/bump-my-version) for automated version management.
-
-```bash
-# Install dev dependencies (includes bump-my-version)
-uv pip install -e ".[dev]"
-
-# Bump patch version (bug fixes): 0.1.0 → 0.1.1
-uv run bump-my-version bump patch
-
-# Bump minor version (new features): 0.1.0 → 0.2.0
-uv run bump-my-version bump minor
-
-# Bump major version (breaking changes): 0.1.0 → 1.0.0
-uv run bump-my-version bump major
-```
-
-Running `bump-my-version bump` automatically:
-- Updates the version in `pyproject.toml` and `src/glpkg/__init__.py`
-- Creates a git commit with the version change
-- Creates a git tag (format: `v1.2.3`)
-
-#### Release Workflow
-
-```bash
-# 1. Bump version (e.g., patch for bug fix)
-uv run bump-my-version bump patch
-
-# 2. Push changes and tags
-git push && git push --tags
-
-# 3. Create GitHub release at https://github.com/your-org/glpkg/releases/new
-# 4. PyPI publication happens automatically via GitHub Actions
-```
-
-To create a GitHub release:
-1. Navigate to the repository's Releases page
-2. Click "Create a new release"
-3. Select the version tag created by bump-my-version
-4. Add release notes describing changes
-5. Publish the release
-
-Publishing a GitHub release automatically triggers the `.github/workflows/publish.yml` workflow to publish to PyPI.
-
-#### Verification
-
-```bash
-# Check that version numbers match in both files
-grep -r "0.1.0" pyproject.toml src/glpkg/__init__.py
-
-# Test bump-my-version dry run
-uv run bump-my-version bump patch --dry-run --verbose
-
-# Verify git tags
-git tag -l
-```
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Development setup and contribution guidelines
+- [docs/SHELL_COMPLETION.md](docs/SHELL_COMPLETION.md) - Shell completion setup for bash and zsh
+- [docs/RELEASING.md](docs/RELEASING.md) - Release procedures and publishing workflow
+- [tests/README.md](tests/README.md) - Detailed testing documentation
 
 ## Project Structure
 
