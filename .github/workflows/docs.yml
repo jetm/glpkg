@@ -1,0 +1,57 @@
+name: Documentation Validation
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  validate-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install markdownlint-cli2
+        run: npm install -g markdownlint-cli2
+
+      - name: Install markdown-link-check
+        run: npm install -g markdown-link-check
+
+      - name: Lint markdown files
+        run: markdownlint-cli2 "README.md" "CONTRIBUTING.md" "tests/README.md" "docs/**/*.md"
+        continue-on-error: false
+
+      - name: Check links in README.md
+        run: markdown-link-check README.md
+        continue-on-error: false
+
+      - name: Check links in CONTRIBUTING.md
+        run: markdown-link-check CONTRIBUTING.md
+        continue-on-error: false
+
+      - name: Check links in tests/README.md
+        run: markdown-link-check tests/README.md
+        continue-on-error: false
+
+      - name: Check links in docs/RELEASING.md
+        run: markdown-link-check docs/RELEASING.md
+        continue-on-error: false
+
+      - name: Check links in docs/SHELL_COMPLETION.md
+        run: markdown-link-check docs/SHELL_COMPLETION.md
+        continue-on-error: false
+
+      - name: Check links in docs/WORKFLOWS.md
+        run: markdown-link-check docs/WORKFLOWS.md
+        continue-on-error: false

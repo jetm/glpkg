@@ -1,0 +1,41 @@
+name: Lint
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: uv pip install -e ".[dev]" --system
+
+      - name: Run Ruff linting
+        run: uv run ruff check src/
+
+      - name: Run Ruff formatting check
+        run: uv run ruff format --check src/
+
+      - name: Run Mypy type checking
+        run: uv run mypy src/glpkg/ --strict

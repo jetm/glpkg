@@ -6,13 +6,14 @@ class in the monolithic test file. It provides utilities for generating test dat
 with various characteristics for upload testing.
 """
 
-import hashlib
 import secrets
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+
+from glpkg.validators import calculate_sha256
 
 
 @dataclass
@@ -69,8 +70,8 @@ class ArtifactFactory:
         # Write file
         file_path.write_bytes(content)
 
-        # Calculate checksum
-        checksum = hashlib.sha256(content).hexdigest()
+        # Calculate checksum using validators module
+        checksum = calculate_sha256(file_path)
 
         # Determine content type
         content_type = ArtifactFactory._determine_content_type(
@@ -404,13 +405,7 @@ def calculate_file_checksum(file_path: Path) -> str:
     Returns:
         SHA256 checksum as hexadecimal string
     """
-    sha256_hash = hashlib.sha256()
-
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(chunk)
-
-    return sha256_hash.hexdigest()
+    return calculate_sha256(file_path)
 
 
 def create_file_with_checksum(

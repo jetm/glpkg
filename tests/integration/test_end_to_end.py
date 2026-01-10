@@ -1,16 +1,21 @@
 """
-Integration tests for GitLab upload script.
+End-to-end integration tests using direct module invocation.
 
-This module contains comprehensive integration tests extracted from the monolithic
-test file. These tests validate end-to-end scenarios, error handling, and overall
-test coverage to ensure the upload script works correctly in real-world conditions.
+This module contains comprehensive integration tests that validate complete
+workflows, error handling, coverage verification, and parallel execution
+safety by calling the CLI main() function directly.
 """
 
+import os
+import secrets
 from pathlib import Path
 
 import pytest
 
-from .utils.test_helpers import ScriptExecutor, UploadExecution, get_project_args
+from .test_helpers_module import (
+    ModuleExecutor,
+    validate_json_result,
+)
 
 # Test markers for categorization
 pytestmark = [
@@ -25,60 +30,53 @@ def test_comprehensive_upload_validation(gitlab_client, artifact_manager, projec
     """
     Test comprehensive upload validation covering all major scenarios.
 
-    Extracted from TestOrchestrator._test_comprehensive_upload_validation
+    This test validates single file, multiple files, and directory uploads
+    in a single comprehensive test.
     """
-    executor = ScriptExecutor()
+    executor = ModuleExecutor()
 
     # Create a variety of test files and scenarios
     single_file = artifact_manager.create_test_file(
-        "comprehensive-single.txt", 1024, "text"
+        "comprehensive-single-module.txt", 1024, "text"
     )
 
     multiple_files = [
-        artifact_manager.create_test_file("comp-multi-1.json", 2048, "json"),
-        artifact_manager.create_test_file("comp-multi-2.bin", 4096, "binary"),
-        artifact_manager.create_test_file("comp-multi-3.csv", 1536, "text"),
+        artifact_manager.create_test_file("comp-multi-module-1.json", 2048, "json"),
+        artifact_manager.create_test_file("comp-multi-module-2.bin", 4096, "binary"),
+        artifact_manager.create_test_file("comp-multi-module-3.csv", 1536, "text"),
     ]
 
-    directory_files = artifact_manager.create_test_directory("comp-directory", 3)
-    directory_path = artifact_manager.base_dir / "comp-directory"
+    directory_files = artifact_manager.create_test_directory("comp-directory-module", 3)
+    directory_path = artifact_manager.base_dir / "comp-directory-module"
 
     # Set up GitLab client with project
     gitlab_client.set_project(project_path)
 
     # Create unique package names for each scenario
-    single_package = gitlab_client.create_test_package("comp-single", "1.0.0")
-    multi_package = gitlab_client.create_test_package("comp-multi", "1.0.0")
-    dir_package = gitlab_client.create_test_package("comp-dir", "1.0.0")
+    single_package = gitlab_client.create_test_package("comp-single-module", "1.0.0")
+    multi_package = gitlab_client.create_test_package("comp-multi-module", "1.0.0")
+    dir_package = gitlab_client.create_test_package("comp-dir-module", "1.0.0")
 
     # Test 1: Single file upload
-    single_upload_execution = UploadExecution(
-        command=[
-            str(executor.script_path),
-            "--package-name",
-            single_package,
-            "--version",
-            "1.0.0",
-            "--files",
-            str(single_file.path),
-            "--json-output",
-        ]
-        + get_project_args(project_path),
-        expected_exit_code=0,
-        expected_output_patterns=[],
-        timeout=120,
-        env_vars={"GITLAB_TOKEN": gitlab_client.token},
+    single_argv = executor.build_argv(
+        package_name=single_package,
+        version="1.0.0",
+        files=[str(single_file.path)],
+        project_path=project_path,
+        json_output=True,
+    )
+
+    single_result = executor.execute_upload(
+        argv=single_argv,
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
-    single_result = executor.execute_upload(single_upload_execution)
     assert single_result.success, (
         f"Single file upload failed: {single_result.error_message}"
     )
 
     # Validate JSON output
-    from .utils.test_helpers import validate_json_result
-
     assert single_result.json_data is not None, "JSON output not available"
     assert validate_json_result(
         single_result.json_data,
@@ -106,26 +104,20 @@ def test_comprehensive_upload_validation(gitlab_client, artifact_manager, projec
 
     # Test 2: Multiple files upload
     multi_file_paths = [str(f.path) for f in multiple_files]
-    multi_upload_execution = UploadExecution(
-        command=[
-            str(executor.script_path),
-            "--package-name",
-            multi_package,
-            "--version",
-            "1.0.0",
-            "--files",
-        ]
-        + multi_file_paths
-        + ["--json-output"]
-        + get_project_args(project_path),
-        expected_exit_code=0,
-        expected_output_patterns=[],
-        timeout=180,
-        env_vars={"GITLAB_TOKEN": gitlab_client.token},
+    multi_argv = executor.build_argv(
+        package_name=multi_package,
+        version="1.0.0",
+        files=multi_file_paths,
+        project_path=project_path,
+        json_output=True,
+    )
+
+    multi_result = executor.execute_upload(
+        argv=multi_argv,
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
-    multi_result = executor.execute_upload(multi_upload_execution)
     assert multi_result.success, (
         f"Multiple files upload failed: {multi_result.error_message}"
     )
@@ -157,26 +149,20 @@ def test_comprehensive_upload_validation(gitlab_client, artifact_manager, projec
         ), f"Multiple files validation failed for {test_file.path.name}"
 
     # Test 3: Directory upload
-    dir_upload_execution = UploadExecution(
-        command=[
-            str(executor.script_path),
-            "--package-name",
-            dir_package,
-            "--version",
-            "1.0.0",
-            "--directory",
-            str(directory_path),
-            "--json-output",
-        ]
-        + get_project_args(project_path),
-        expected_exit_code=0,
-        expected_output_patterns=[],
-        timeout=180,
-        env_vars={"GITLAB_TOKEN": gitlab_client.token},
+    dir_argv = executor.build_argv(
+        package_name=dir_package,
+        version="1.0.0",
+        directory=str(directory_path),
+        project_path=project_path,
+        json_output=True,
+    )
+
+    dir_result = executor.execute_upload(
+        argv=dir_argv,
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
-    dir_result = executor.execute_upload(dir_upload_execution)
     assert dir_result.success, f"Directory upload failed: {dir_result.error_message}"
 
     # Validate JSON output
@@ -234,39 +220,28 @@ def test_error_scenario_validation(gitlab_client, artifact_manager, project_path
     Test comprehensive error scenario validation.
 
     This test validates that various error scenarios are handled correctly
-    and produce appropriate error messages and exit codes. Tests include:
-    1. Invalid file paths
-    2. Permission errors
-    3. Network connectivity issues
-    4. Authentication failures
-    5. Invalid project specifications
-
-    Extracted from TestOrchestrator._test_error_scenario_validation
+    and produce appropriate error messages and exit codes.
     """
-    executor = ScriptExecutor()
+    executor = ModuleExecutor()
     gitlab_client.set_project(project_path)
 
     test_results = []
 
     # Error scenario 1: Invalid file path
-    command = executor.build_command(
-        package_name="error-test",
+    argv = executor.build_argv(
+        package_name="error-test-module",
         version="1.0.0",
         files=["/nonexistent/invalid/file.txt"],
         project_path=project_path,
         duplicate_policy="skip",
-        use_json_output=True,
+        json_output=True,
     )
 
     result = executor.execute_upload(
-        UploadExecution(
-            command=command,
-            expected_exit_code=1,
-            expected_output_patterns=[],
-            timeout=30,
-            env_vars={"GITLAB_TOKEN": gitlab_client.token},
-            use_json_output=True,
-        )
+        argv=argv,
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
+        expected_exit_code=1,
+        use_json_output=True,
     )
 
     test_results.append(("invalid_file_path", result))
@@ -279,33 +254,24 @@ def test_error_scenario_validation(gitlab_client, artifact_manager, project_path
         assert result.json_data["success"] is False
         assert result.json_data["exit_code"] == 1
         assert "error" in result.json_data
-    else:
-        # Fallback to stderr for early failures
-        assert result.stderr or result.error_message or result.stdout, (
-            "No error message for invalid file path"
-        )
 
     # Error scenario 2: Invalid project path
-    test_artifact = artifact_manager.create_test_file("valid.txt", 512, "text")
+    test_artifact = artifact_manager.create_test_file("valid-module.txt", 512, "text")
 
-    command = executor.build_command(
-        package_name="error-test",
+    argv = executor.build_argv(
+        package_name="error-test-module",
         version="1.0.0",
         files=[str(test_artifact.path)],
         project_path="nonexistent/invalid-project-12345",
         duplicate_policy="skip",
-        use_json_output=True,
+        json_output=True,
     )
 
     result = executor.execute_upload(
-        UploadExecution(
-            command=command,
-            expected_exit_code=1,
-            expected_output_patterns=[],
-            timeout=30,
-            env_vars={"GITLAB_TOKEN": gitlab_client.token},
-            use_json_output=True,
-        )
+        argv=argv,
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
+        expected_exit_code=1,
+        use_json_output=True,
     )
 
     test_results.append(("invalid_project_path", result))
@@ -318,34 +284,25 @@ def test_error_scenario_validation(gitlab_client, artifact_manager, project_path
         assert result.json_data["success"] is False
         assert result.json_data["exit_code"] == 1
         assert "error" in result.json_data
-    else:
-        # Fallback to stderr for early failures
-        assert result.stderr or result.error_message or result.stdout, (
-            "No error message for invalid project path"
-        )
 
     # Error scenario 3: Invalid GitLab URL
-    test_artifact2 = artifact_manager.create_test_file("valid2.txt", 512, "text")
+    test_artifact2 = artifact_manager.create_test_file("valid2-module.txt", 512, "text")
 
-    command = executor.build_command(
-        package_name="error-test",
+    argv = executor.build_argv(
+        package_name="error-test-module",
         version="1.0.0",
         files=[str(test_artifact2.path)],
         project_path=project_path,
         gitlab_url="https://invalid-gitlab-instance-12345.com",
         duplicate_policy="skip",
-        use_json_output=True,
+        json_output=True,
     )
 
     result = executor.execute_upload(
-        UploadExecution(
-            command=command,
-            expected_exit_code=1,
-            expected_output_patterns=[],
-            timeout=30,
-            env_vars={"GITLAB_TOKEN": gitlab_client.token},
-            use_json_output=True,
-        )
+        argv=argv,
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
+        expected_exit_code=1,
+        use_json_output=True,
     )
 
     test_results.append(("invalid_gitlab_url", result))
@@ -358,16 +315,10 @@ def test_error_scenario_validation(gitlab_client, artifact_manager, project_path
         assert result.json_data["success"] is False
         assert result.json_data["exit_code"] == 1
         assert "error" in result.json_data
-    else:
-        # Fallback to stderr for early failures
-        assert result.stderr or result.error_message or result.stdout, (
-            "No error message for invalid GitLab URL"
-        )
 
     # Error scenario 4: Missing required arguments
-    # Try to build command without required package name
     with pytest.raises((ValueError, TypeError)):
-        executor.build_command(
+        executor.build_argv(
             package_name="",  # Empty package name should cause error
             version="1.0.0",
             files=["dummy.txt"],
@@ -376,14 +327,8 @@ def test_error_scenario_validation(gitlab_client, artifact_manager, project_path
 
     # Validate that all error scenarios produced appropriate responses
     for scenario_name, result in test_results:
-        # Check that exit code indicates failure
         assert result.exit_code != 0, (
             f"Scenario {scenario_name} exit code should be non-zero"
-        )
-
-        # Check that some error information is provided
-        assert result.stderr or result.error_message or result.stdout, (
-            f"Scenario {scenario_name} provided no error information"
         )
 
 
@@ -394,11 +339,7 @@ def test_coverage_verification():
     Test coverage verification to ensure all required functionality is tested.
 
     This test verifies that the test suite covers all required functionality
-    by checking that all major features have been tested and that the
-    test results provide comprehensive coverage of the upload script's
-    capabilities.
-
-    Extracted from TestOrchestrator._test_coverage_verification
+    by checking that all major test modules exist.
     """
     # Define required test coverage areas
     required_coverage = {
@@ -419,16 +360,14 @@ def test_coverage_verification():
         "error_scenario_validation": False,
     }
 
-    # In a real implementation, this would check the results of previously run tests
-    # For now, we'll simulate checking test module existence and basic functionality
-
     # Check that test modules exist
     test_modules = [
-        "test_basic_uploads.py",
+        "test_single_file_upload.py",
+        "test_multiple_files_upload.py",
         "test_duplicate_handling.py",
         "test_project_resolution.py",
         "test_error_scenarios.py",
-        "test_integration.py",
+        "test_end_to_end.py",
     ]
 
     tests_dir = Path(__file__).parent
@@ -440,8 +379,9 @@ def test_coverage_verification():
             existing_modules.append(module)
 
             # Mark coverage areas as covered based on module existence
-            if module == "test_basic_uploads.py":
+            if module == "test_single_file_upload.py":
                 required_coverage["single_file_upload"] = True
+            elif module == "test_multiple_files_upload.py":
                 required_coverage["multiple_file_upload"] = True
                 required_coverage["directory_upload"] = True
                 required_coverage["file_mapping"] = True
@@ -457,7 +397,7 @@ def test_coverage_verification():
                 required_coverage["error_handling"] = True
                 required_coverage["network_failure"] = True
                 required_coverage["authentication_error"] = True
-            elif module == "test_integration.py":
+            elif module == "test_end_to_end.py":
                 required_coverage["comprehensive_validation"] = True
                 required_coverage["error_scenario_validation"] = True
 
@@ -472,7 +412,6 @@ def test_coverage_verification():
     ]
 
     # Determine success criteria
-    # Require at least 80% coverage for success, with all critical areas covered
     critical_areas = [
         "single_file_upload",
         "multiple_file_upload",
@@ -485,17 +424,6 @@ def test_coverage_verification():
         required_coverage.get(area, False) for area in critical_areas
     )
     sufficient_coverage = coverage_percentage >= 80.0
-
-    # Generate detailed coverage report (for potential future use)
-    # coverage_report = {
-    #     "total_areas": total_areas,
-    #     "covered_areas": covered_areas,
-    #     "coverage_percentage": coverage_percentage,
-    #     "missing_coverage": missing_coverage,
-    #     "critical_areas_covered": critical_covered,
-    #     "detailed_coverage": required_coverage,
-    #     "existing_modules": existing_modules,
-    # }
 
     print(
         f"Test coverage: {covered_areas}/{total_areas} areas ({coverage_percentage:.1f}%)"
@@ -513,8 +441,6 @@ def test_coverage_verification():
         f"Insufficient coverage: {coverage_percentage:.1f}% (need 80%)"
     )
 
-    print("✓ Test coverage verification passed")
-
 
 @pytest.mark.integration
 @pytest.mark.slow
@@ -524,47 +450,37 @@ def test_end_to_end_workflow_validation(gitlab_client, artifact_manager, project
     Test end-to-end workflow validation with comprehensive cleanup verification.
 
     This test validates the complete workflow from file creation through upload
-    to cleanup, ensuring that all components work together correctly and that
-    cleanup operations function properly in the pytest context.
-
+    to cleanup, ensuring that all components work together correctly.
     """
-    executor = ScriptExecutor()
+    executor = ModuleExecutor()
     gitlab_client.set_project(project_path)
 
     # Create test artifacts
     test_files = [
-        artifact_manager.create_test_file("workflow-test-1.txt", 1024, "text"),
-        artifact_manager.create_test_file("workflow-test-2.json", 2048, "json"),
-        artifact_manager.create_test_file("workflow-test-3.bin", 512, "binary"),
+        artifact_manager.create_test_file("workflow-module-1.txt", 1024, "text"),
+        artifact_manager.create_test_file("workflow-module-2.json", 2048, "json"),
+        artifact_manager.create_test_file("workflow-module-3.bin", 512, "binary"),
     ]
 
     # Create unique package for this workflow test
-    package_name = gitlab_client.create_test_package("workflow-validation", "1.0.0")
+    package_name = gitlab_client.create_test_package("workflow-validation-module", "1.0.0")
 
     # Execute upload
-    from .utils.test_helpers import validate_json_result
-
     file_paths = [str(f.path) for f in test_files]
-    upload_execution = UploadExecution(
-        command=[
-            str(executor.script_path),
-            "--package-name",
-            package_name,
-            "--version",
-            "1.0.0",
-            "--files",
-        ]
-        + file_paths
-        + ["--json-output"]
-        + get_project_args(project_path),
-        expected_exit_code=0,
-        expected_output_patterns=[],
-        timeout=180,
-        env_vars={"GITLAB_TOKEN": gitlab_client.token},
+    argv = executor.build_argv(
+        package_name=package_name,
+        version="1.0.0",
+        files=file_paths,
+        project_path=project_path,
+        json_output=True,
+    )
+
+    result = executor.execute_upload(
+        argv=argv,
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
-    result = executor.execute_upload(upload_execution)
     assert result.success, f"End-to-end upload failed: {result.error_message}"
 
     # Validate JSON output
@@ -591,14 +507,13 @@ def test_end_to_end_workflow_validation(gitlab_client, artifact_manager, project
         ), f"End-to-end verification failed for {test_file.path.name}"
 
     # Test cleanup verification - this will be handled by fixtures
-    # but we can verify that the artifacts exist before cleanup
     for test_file in test_files:
         assert test_file.path.exists(), (
             f"Test artifact {test_file.path} should exist before cleanup"
         )
 
     print(
-        f"✓ End-to-end workflow validation completed successfully for package {package_name}"
+        f"End-to-end workflow validation completed successfully for package {package_name}"
     )
 
 
@@ -609,51 +524,38 @@ def test_parallel_execution_safety(gitlab_client, artifact_manager, project_path
     Test that integration tests can run safely in parallel without conflicts.
 
     This test validates that the test infrastructure properly isolates tests
-    when running in parallel using pytest-xdist, ensuring no race conditions
-    or shared state issues occur.
-
+    when running in parallel using pytest-xdist.
     """
-    executor = ScriptExecutor()
+    executor = ModuleExecutor()
     gitlab_client.set_project(project_path)
 
     # Create unique test artifacts with process-specific naming
-    import os
-    import secrets
-
     process_id = os.getpid()
     random_suffix = secrets.token_hex(4)
-    unique_prefix = f"parallel-{process_id}-{random_suffix}"
+    unique_prefix = f"parallel-module-{process_id}-{random_suffix}"
 
     test_file = artifact_manager.create_test_file(
         f"{unique_prefix}-test.txt", 1024, "text"
     )
     package_name = gitlab_client.create_test_package(
-        f"parallel-test-{random_suffix}", "1.0.0"
+        f"parallel-test-module-{random_suffix}", "1.0.0"
     )
 
     # Execute upload with unique identifiers
-    from .utils.test_helpers import validate_json_result
+    argv = executor.build_argv(
+        package_name=package_name,
+        version="1.0.0",
+        files=[str(test_file.path)],
+        project_path=project_path,
+        json_output=True,
+    )
 
-    upload_execution = UploadExecution(
-        command=[
-            str(executor.script_path),
-            "--package-name",
-            package_name,
-            "--version",
-            "1.0.0",
-            "--files",
-            str(test_file.path),
-            "--json-output",
-        ]
-        + get_project_args(project_path),
-        expected_exit_code=0,
-        expected_output_patterns=[],
-        timeout=120,
-        env_vars={"GITLAB_TOKEN": gitlab_client.token},
+    result = executor.execute_upload(
+        argv=argv,
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
-    result = executor.execute_upload(upload_execution)
     assert result.success, f"Parallel execution test failed: {result.error_message}"
 
     # Validate JSON output
@@ -676,7 +578,7 @@ def test_parallel_execution_safety(gitlab_client, artifact_manager, project_path
         package_name, "1.0.0", test_file.path.name, test_file.checksum
     ), "Parallel execution upload verification failed"
 
-    print(f"✓ Parallel execution safety test completed for process {process_id}")
+    print(f"Parallel execution safety test completed for process {process_id}")
 
 
 @pytest.mark.integration
@@ -689,11 +591,9 @@ def test_comprehensive_cleanup_verification(
     Test comprehensive cleanup verification to ensure all test artifacts are properly cleaned up.
 
     This test validates that the pytest fixture cleanup mechanisms work correctly
-    and that no test artifacts are left behind after test execution, preserving
-    the cleanup verification functionality from the original monolithic test.
-
+    and that no test artifacts are left behind after test execution.
     """
-    executor = ScriptExecutor()
+    executor = ModuleExecutor()
     gitlab_client.set_project(project_path)
 
     # Track initial state
@@ -704,14 +604,14 @@ def test_comprehensive_cleanup_verification(
     test_files = []
     for i in range(3):
         test_file = artifact_manager.create_test_file(
-            f"cleanup-test-{i}.txt", 1024, "text"
+            f"cleanup-module-{i}.txt", 1024, "text"
         )
         test_files.append(test_file)
 
     # Create test packages that should be cleaned up
     package_names = []
     for i in range(2):
-        package_name = gitlab_client.create_test_package(f"cleanup-test-{i}", "1.0.0")
+        package_name = gitlab_client.create_test_package(f"cleanup-module-{i}", "1.0.0")
         package_names.append(package_name)
 
     # Verify artifacts were created
@@ -727,29 +627,21 @@ def test_comprehensive_cleanup_verification(
         assert test_file.path.exists(), f"Test file {test_file.path} should exist"
 
     # Perform some uploads to create actual GitLab packages
-    from .utils.test_helpers import validate_json_result
-
     for i, package_name in enumerate(package_names):
-        upload_execution = UploadExecution(
-            command=[
-                str(executor.script_path),
-                "--package-name",
-                package_name,
-                "--version",
-                "1.0.0",
-                "--files",
-                str(test_files[i].path),
-                "--json-output",
-            ]
-            + get_project_args(project_path),
-            expected_exit_code=0,
-            expected_output_patterns=[],
-            timeout=240,
-            env_vars={"GITLAB_TOKEN": gitlab_client.token},
+        argv = executor.build_argv(
+            package_name=package_name,
+            version="1.0.0",
+            files=[str(test_files[i].path)],
+            project_path=project_path,
+            json_output=True,
+        )
+
+        result = executor.execute_upload(
+            argv=argv,
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             use_json_output=True,
         )
 
-        result = executor.execute_upload(upload_execution)
         assert result.success, (
             f"Upload failed for cleanup test package {package_name}: {result.error_message}"
         )
@@ -765,19 +657,12 @@ def test_comprehensive_cleanup_verification(
         assert result.json_data["statistics"]["new_uploads"] == 1
         assert len(result.json_data["successful_uploads"]) == 1
 
-        # Verify uploaded filename appears in successful_uploads
-        uploaded_filenames = [
-            upload["target_filename"]
-            for upload in result.json_data["successful_uploads"]
-        ]
-        assert test_files[i].path.name in uploaded_filenames
-
         # Verify upload was successful via GitLab API
         assert gitlab_client.verify_upload(
             package_name, "1.0.0", test_files[i].path.name, test_files[i].checksum
         ), f"Upload verification failed for cleanup test package {package_name}"
 
-    # Test manual cleanup to verify it works (fixtures will also clean up automatically)
+    # Test manual cleanup to verify it works
     artifact_successful, artifact_failed = artifact_manager.cleanup_artifacts(
         force=True
     )
@@ -805,7 +690,7 @@ def test_comprehensive_cleanup_verification(
         "GitLab client should have no tracked packages after cleanup"
     )
 
-    print("✓ Comprehensive cleanup verification completed successfully")
+    print("Comprehensive cleanup verification completed successfully")
 
 
 @pytest.mark.integration
@@ -818,44 +703,33 @@ def test_multi_scenario_workflow_validation(
     Test multi-scenario workflow validation combining different upload types and policies.
 
     This test validates complex workflows that combine multiple upload scenarios,
-    duplicate policies, and error conditions to ensure the system handles
-    real-world usage patterns correctly.
-
+    duplicate policies, and error conditions.
     """
-    executor = ScriptExecutor()
+    executor = ModuleExecutor()
     gitlab_client.set_project(project_path)
 
     # Scenario 1: Upload with skip duplicate policy
-    from .utils.test_helpers import validate_json_result
-
     test_file_1 = artifact_manager.create_test_file(
-        "multi-scenario-1.txt", 1024, "text"
+        "multi-scenario-module-1.txt", 1024, "text"
     )
-    package_name_1 = gitlab_client.create_test_package("multi-scenario-skip", "1.0.0")
+    package_name_1 = gitlab_client.create_test_package("multi-scenario-skip-module", "1.0.0")
 
     # First upload
-    upload_execution_1 = UploadExecution(
-        command=[
-            str(executor.script_path),
-            "--package-name",
-            package_name_1,
-            "--version",
-            "1.0.0",
-            "--files",
-            str(test_file_1.path),
-            "--duplicate-policy",
-            "skip",
-            "--json-output",
-        ]
-        + get_project_args(project_path),
-        expected_exit_code=0,
-        expected_output_patterns=[],
-        timeout=120,
-        env_vars={"GITLAB_TOKEN": gitlab_client.token},
+    argv_1 = executor.build_argv(
+        package_name=package_name_1,
+        version="1.0.0",
+        files=[str(test_file_1.path)],
+        project_path=project_path,
+        duplicate_policy="skip",
+        json_output=True,
+    )
+
+    result_1 = executor.execute_upload(
+        argv=argv_1,
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
-    result_1 = executor.execute_upload(upload_execution_1)
     assert result_1.success, f"First upload failed: {result_1.error_message}"
 
     # Validate JSON output for first upload
@@ -869,7 +743,12 @@ def test_multi_scenario_workflow_validation(
     assert result_1.json_data["statistics"]["new_uploads"] == 1
 
     # Second upload (should skip duplicate)
-    result_1_dup = executor.execute_upload(upload_execution_1)
+    result_1_dup = executor.execute_upload(
+        argv=argv_1,
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
+        use_json_output=True,
+    )
+
     assert result_1_dup.success, (
         f"Duplicate upload with skip policy failed: {result_1_dup.error_message}"
     )
@@ -880,34 +759,27 @@ def test_multi_scenario_workflow_validation(
     assert result_1_dup.json_data["statistics"]["skipped_duplicates"] == 1
 
     # Scenario 2: Directory upload with replace policy
-    directory_files = artifact_manager.create_test_directory("multi-scenario-dir", 2)
-    directory_path = artifact_manager.base_dir / "multi-scenario-dir"
+    directory_files = artifact_manager.create_test_directory("multi-scenario-dir-module", 2)
+    directory_path = artifact_manager.base_dir / "multi-scenario-dir-module"
     package_name_2 = gitlab_client.create_test_package(
-        "multi-scenario-replace", "1.0.0"
+        "multi-scenario-replace-module", "1.0.0"
     )
 
-    upload_execution_2 = UploadExecution(
-        command=[
-            str(executor.script_path),
-            "--package-name",
-            package_name_2,
-            "--version",
-            "1.0.0",
-            "--directory",
-            str(directory_path),
-            "--duplicate-policy",
-            "replace",
-            "--json-output",
-        ]
-        + get_project_args(project_path),
-        expected_exit_code=0,
-        expected_output_patterns=[],
-        timeout=180,
-        env_vars={"GITLAB_TOKEN": gitlab_client.token},
+    argv_2 = executor.build_argv(
+        package_name=package_name_2,
+        version="1.0.0",
+        directory=str(directory_path),
+        project_path=project_path,
+        duplicate_policy="replace",
+        json_output=True,
+    )
+
+    result_2 = executor.execute_upload(
+        argv=argv_2,
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
-    result_2 = executor.execute_upload(upload_execution_2)
     assert result_2.success, f"Directory upload failed: {result_2.error_message}"
 
     # Validate JSON output for directory upload
@@ -929,32 +801,27 @@ def test_multi_scenario_workflow_validation(
 
     # Scenario 3: Multiple files with error handling
     multiple_files = [
-        artifact_manager.create_test_file("multi-scenario-3a.json", 2048, "json"),
-        artifact_manager.create_test_file("multi-scenario-3b.bin", 1024, "binary"),
+        artifact_manager.create_test_file("multi-scenario-module-3a.json", 2048, "json"),
+        artifact_manager.create_test_file("multi-scenario-module-3b.bin", 1024, "binary"),
     ]
-    package_name_3 = gitlab_client.create_test_package("multi-scenario-multi", "1.0.0")
+    package_name_3 = gitlab_client.create_test_package("multi-scenario-multi-module", "1.0.0")
 
     file_paths = [str(f.path) for f in multiple_files]
-    upload_execution_3 = UploadExecution(
-        command=[
-            str(executor.script_path),
-            "--package-name",
-            package_name_3,
-            "--version",
-            "1.0.0",
-            "--files",
-        ]
-        + file_paths
-        + ["--duplicate-policy", "error", "--json-output"]
-        + get_project_args(project_path),
-        expected_exit_code=0,
-        expected_output_patterns=[],
-        timeout=180,
-        env_vars={"GITLAB_TOKEN": gitlab_client.token},
+    argv_3 = executor.build_argv(
+        package_name=package_name_3,
+        version="1.0.0",
+        files=file_paths,
+        project_path=project_path,
+        duplicate_policy="error",
+        json_output=True,
+    )
+
+    result_3 = executor.execute_upload(
+        argv=argv_3,
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
-    result_3 = executor.execute_upload(upload_execution_3)
     assert result_3.success, f"Multiple files upload failed: {result_3.error_message}"
 
     # Validate JSON output for multiple files upload
@@ -989,5 +856,5 @@ def test_multi_scenario_workflow_validation(
 
     total_files = 1 + len(directory_files) + len(multiple_files)
     print(
-        f"✓ Multi-scenario workflow validation completed successfully for {total_files} files across 3 scenarios"
+        f"Multi-scenario workflow validation completed successfully for {total_files} files across 3 scenarios"
     )

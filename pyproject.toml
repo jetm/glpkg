@@ -1,0 +1,125 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "glpkg-cli"
+version = "0.1.0"
+description = "A CLI tool for uploading files to GitLab's Generic Package Registry"
+authors = [{name = "Javier Tia"}]
+license = "MIT"
+requires-python = ">=3.11"
+readme = "README.md"
+keywords = ["gitlab", "package", "upload", "cli", "generic-package-registry"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "python-gitlab>=4.0.0",
+    "rich>=13.0.0",
+    "GitPython>=3.1.0",
+    "tenacity>=8.0.0",
+    "argcomplete>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "bump-my-version",
+    "mypy",
+    "pex>=2.0.0",
+    "pre-commit",
+    "ruff",
+    "shiv>=1.0.0",
+]
+test = [
+    "pytest",
+    "pytest-xdist",
+    "pytest-timeout",
+    "pytest-sugar",
+    "pytest-instafail",
+    "pytest-cov",
+]
+
+[project.scripts]
+glpkg = "glpkg.cli.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--tb=short",
+    "--strict-markers",
+    "--cov=glpkg",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "--cov-fail-under=90",
+    "--no-cov-on-fail",
+]
+markers = [
+    "unit: Unit tests that don't require external dependencies",
+    "integration: Integration tests requiring GitLab API access",
+    "fast: Fast-running tests",
+    "slow: Slow-running tests",
+    "timeout: Timeout for test execution (provided by pytest-timeout)",
+]
+# Note: Target coverage is 95% (warning threshold in CI), fail threshold is 90%
+
+[tool.coverage.run]
+source = ["src/glpkg"]
+omit = ["tests/*", "*/tests/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+[tool.bumpversion]
+current_version = "0.1.0"
+commit = true
+tag = true
+tag_name = "v{new_version}"
+message = "Bump version: {current_version} → {new_version}"
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = "version = \"{current_version}\""
+replace = "version = \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "src/glpkg/__init__.py"
+search = "__version__ = \"{current_version}\""
+replace = "__version__ = \"{new_version}\""

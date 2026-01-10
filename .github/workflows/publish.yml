@@ -1,0 +1,48 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install build dependencies
+        run: uv pip install build --system
+
+      - name: Install build tools for .pyz
+        run: uv pip install shiv --system
+
+      - name: Build package distributions
+        run: python -m build
+
+      - name: Build .pyz universal binary
+        run: bash scripts/build_pyz.sh --tool shiv --output-dir dist
+
+      - name: List built artifacts
+        run: ls -la dist/
+
+      - name: Upload .pyz to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/glpkg.pyz
+          fail_on_unmatched_files: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
