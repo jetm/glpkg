@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """Main CLI entry point with subcommand routing for glpkg.
 
 This module provides the command-line interface framework for glpkg,
@@ -265,6 +266,15 @@ For subcommand help:
         help="Display version number and exit",
     )
 
+    # Shell completion installation
+    parser.add_argument(
+        "--install-completion",
+        type=str,
+        choices=["bash", "zsh"],
+        metavar="SHELL",
+        help="Install shell completion for the specified shell (bash or zsh)",
+    )
+
     # Create subparsers
     subparsers = parser.add_subparsers(
         title="commands",
@@ -297,6 +307,23 @@ def main(argv: list[str] | None = None) -> None:
 
     # Parse arguments
     args = parser.parse_args(argv)
+
+    # Handle --install-completion before checking for subcommand
+    if args.install_completion:
+        from glpkg.cli.completion import install_completion
+
+        try:
+            install_completion(args.install_completion)
+            sys.exit(0)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(3)  # ConfigurationError
+        except PermissionError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(5)  # FileValidationError
+        except OSError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(5)  # FileValidationError
 
     # If no subcommand is provided, show help and exit
     if args.command is None:
