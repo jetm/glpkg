@@ -1,5 +1,9 @@
 # glpkg
 
+![Tests](https://github.com/OWNER/REPO/actions/workflows/test.yml/badge.svg)
+![Lint](https://github.com/OWNER/REPO/actions/workflows/lint.yml/badge.svg)
+![Publish](https://github.com/OWNER/REPO/actions/workflows/publish.yml/badge.svg)
+![Docs](https://github.com/OWNER/REPO/actions/workflows/docs.yml/badge.svg)
 ![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)
 
 A CLI tool for uploading files to GitLab's Generic Package Registry.
@@ -141,6 +145,7 @@ uv run pytest tests/unit/
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Development setup and contribution guidelines
 - [docs/SHELL_COMPLETION.md](docs/SHELL_COMPLETION.md) - Shell completion setup for bash and zsh
 - [docs/RELEASING.md](docs/RELEASING.md) - Release procedures and publishing workflow
+- [docs/WORKFLOWS.md](docs/WORKFLOWS.md) - GitHub Actions workflows and CI/CD pipeline
 - [tests/README.md](tests/README.md) - Detailed testing documentation
 
 ## Project Structure

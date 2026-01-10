@@ -51,3 +51,7 @@ jobs:
       - name: Check links in docs/SHELL_COMPLETION.md
         run: markdown-link-check docs/SHELL_COMPLETION.md
         continue-on-error: false
+
+      - name: Check links in docs/WORKFLOWS.md
+        run: markdown-link-check docs/WORKFLOWS.md
+        continue-on-error: false
