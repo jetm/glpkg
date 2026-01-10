@@ -37,15 +37,46 @@ jobs:
       - name: Install test dependencies
         run: uv pip install -e ".[test]" --system
 
-      - name: Run unit tests
-        run: uv run pytest tests/unit/ -m unit -v -n auto
+      - name: Run unit tests with coverage
+        run: uv run pytest tests/unit/ -m unit -v -n auto --cov=glpkg --cov-report=xml --cov-report=term
+
+      - name: Upload coverage reports
+        if: matrix.python-version == '3.11'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage.xml
+            htmlcov/
+          retention-days: 7
+
+      - name: Check coverage threshold
+        if: matrix.python-version == '3.11'
+        run: |
+          # Extract coverage percentage from XML
+          COVERAGE=$(python -c "
+          import xml.etree.ElementTree as ET
+          tree = ET.parse('coverage.xml')
+          root = tree.getroot()
+          line_rate = float(root.get('line-rate', 0))
+          print(f'{line_rate * 100:.2f}')
+          ")
+          echo "Coverage: ${COVERAGE}%"
+
+          # Check if below 95% warning threshold
+          if (( $(echo "$COVERAGE < 95" | bc -l) )); then
+            echo "::warning::Coverage is below 95% target: ${COVERAGE}%"
+          fi
+
+          # The --cov-fail-under=90 in pytest already handles the failure threshold
 
       - name: Run integration tests
         if: ${{ secrets.GITLAB_TOKEN != '' && secrets.GITLAB_REPO != '' }}
         env:
           GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
           GITLAB_PROJECT_PATH: ${{ secrets.GITLAB_REPO }}
-        run: uv run pytest tests/integration/ -m integration -v -n auto
+          RUN_INTEGRATION_TESTS: "1"
+        run: uv run pytest tests/integration/ -m integration -v -n auto --no-cov
 
       - name: Upload test results
         uses: actions/upload-artifact@v4

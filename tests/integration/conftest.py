@@ -147,6 +147,7 @@ def validate_integration_environment():
 
     This session-scoped fixture runs once before any integration tests execute.
     It validates:
+        0. RUN_INTEGRATION_TESTS environment variable is set to "1"
         1. GITLAB_TOKEN environment variable is set
         2. Current directory is within a Git repository
         3. Git repository has at least one GitLab remote
@@ -157,6 +158,18 @@ def validate_integration_environment():
     This fixture is marked autouse=True so it runs automatically for all
     integration tests without needing to be explicitly requested.
     """
+    # Check 0: RUN_INTEGRATION_TESTS environment variable (opt-in mechanism)
+    run_integration = os.environ.get("RUN_INTEGRATION_TESTS")
+    if run_integration != "1":
+        pytest.skip(
+            "Integration tests disabled. Set RUN_INTEGRATION_TESTS=1 to enable.\n\n"
+            "SOLUTION:\n"
+            "  export RUN_INTEGRATION_TESTS=1\n\n"
+            "Or run with:\n"
+            "  RUN_INTEGRATION_TESTS=1 pytest tests/integration/ -m integration",
+            allow_module_level=True,
+        )
+
     # Check 1: GITLAB_TOKEN environment variable
     token = os.environ.get("GITLAB_TOKEN")
     if not token:

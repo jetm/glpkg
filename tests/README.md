@@ -23,7 +23,8 @@ uv run pytest tests/
 # Run only unit tests (fast, no external dependencies)
 uv run pytest tests/unit/
 
-# Run integration tests (requires GITLAB_TOKEN)
+# Run integration tests (requires RUN_INTEGRATION_TESTS=1 and GITLAB_TOKEN)
+export RUN_INTEGRATION_TESTS=1
 export GITLAB_TOKEN="your-token"
 uv run pytest tests/integration/ -m integration
 
@@ -97,6 +98,7 @@ All test dependencies are automatically installed by uv when running `uv run pyt
 - pytest-timeout (timeout management)
 - pytest-sugar (progress visualization)
 - pytest-instafail (instant failure reporting)
+- pytest-cov (code coverage reporting)
 
 **Important**: The `glpkg` package itself must be installed in development mode before running tests:
 
@@ -108,12 +110,20 @@ Alternatively, you can use `pip install -e .` if not using uv.
 
 ### GitLab Configuration (Integration Tests Only)
 
-Integration tests require a GitLab API token:
+Integration tests require explicit opt-in and a GitLab API token:
 
 ```bash
+# Required: Opt-in to run integration tests
+export RUN_INTEGRATION_TESTS=1
+
+# Required: GitLab API token
 export GITLAB_TOKEN="your-gitlab-token"
-export GITLAB_URL="https://gitlab.example.com"  # Optional, defaults to GitLab.com
-export GITLAB_PROJECT_PATH="group/project"      # Optional, can auto-detect from git
+
+# Optional: Custom GitLab URL (defaults to GitLab.com)
+export GITLAB_URL="https://gitlab.example.com"
+
+# Optional: Project path (can auto-detect from git)
+export GITLAB_PROJECT_PATH="group/project"
 ```
 
 ### Required Permissions
@@ -193,21 +203,69 @@ uv run pytest tests/ -m api
 ./run_tests.py --durations=5 tests/
 ```
 
+## Code Coverage
+
+The test suite includes code coverage reporting with dual thresholds:
+
+- **Warning threshold**: 95% (CI adds a warning annotation when below)
+- **Failure threshold**: 90% (tests fail if coverage drops below)
+
+### Running Tests with Coverage
+
+```bash
+# Run unit tests with coverage (default configuration)
+uv run pytest tests/unit/ -m unit --cov=glpkg --cov-report=term
+
+# Generate HTML coverage report
+uv run pytest tests/unit/ -m unit --cov=glpkg --cov-report=html
+
+# View HTML report
+open htmlcov/index.html  # macOS
+xdg-open htmlcov/index.html  # Linux
+
+# Generate XML coverage report (for CI)
+uv run pytest tests/unit/ -m unit --cov=glpkg --cov-report=xml
+```
+
+### Coverage Configuration
+
+Coverage is configured in `pyproject.toml`:
+
+```toml
+[tool.coverage.run]
+source = ["src/glpkg"]
+omit = ["tests/*", "*/tests/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+```
+
+### Interpreting Coverage Reports
+
+- **Term-missing output**: Shows which lines are not covered directly in the terminal
+- **HTML report**: Provides an interactive view in `htmlcov/index.html`
+- **XML report**: Machine-readable format for CI integration in `coverage.xml`
+
 ## Integration Test Requirements
 
-Integration tests automatically validate their environment before running.
+Integration tests require explicit opt-in and automatically validate their environment before running.
 
 ### Automatic Environment Validation
 
 When you run integration tests, the test suite checks:
 
-1. **GITLAB_TOKEN environment variable** - Must be set with a valid GitLab API token
-2. **Git repository** - Must run from within a Git repository
-3. **GitLab remotes** - Repository must have at least one remote pointing to a GitLab instance
+1. **RUN_INTEGRATION_TESTS environment variable** - Must be set to `1` to opt-in
+2. **GITLAB_TOKEN environment variable** - Must be set with a valid GitLab API token
+3. **Git repository** - Must run from within a Git repository
+4. **GitLab remotes** - Repository must have at least one remote pointing to a GitLab instance
 
 ### Verifying Your Setup
 
 ```bash
+# Check if integration tests are enabled
+echo $RUN_INTEGRATION_TESTS
+
 # Check if in Git repository
 git remote -v
 
@@ -217,7 +275,8 @@ git remote -v | grep gitlab
 # Check token is set
 echo $GITLAB_TOKEN
 
-# Verify token is not empty
+# Verify full setup
+[ "$RUN_INTEGRATION_TESTS" = "1" ] && echo "Integration tests enabled" || echo "Integration tests NOT enabled"
 [ -n "$GITLAB_TOKEN" ] && echo "Token is set" || echo "Token is NOT set"
 ```
 
@@ -225,6 +284,7 @@ echo $GITLAB_TOKEN
 
 If integration tests are skipped, the error message explains what's missing:
 
+- **Integration tests disabled**: Set `export RUN_INTEGRATION_TESTS=1` to opt-in
 - **Missing GITLAB_TOKEN**: Set the environment variable with `export GITLAB_TOKEN='your-token'`
 - **No Git repository**: Navigate to a Git repository or initialize one
 - **No GitLab remotes**: Add a GitLab remote with `git remote add origin https://gitlab.com/namespace/project.git`

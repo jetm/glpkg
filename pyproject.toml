@@ -41,6 +41,7 @@ test = [
     "pytest-timeout",
     "pytest-sugar",
     "pytest-instafail",
+    "pytest-cov",
 ]
 
 [project.scripts]
@@ -74,6 +75,12 @@ addopts = [
     "-v",
     "--tb=short",
     "--strict-markers",
+    "--cov=glpkg",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-report=xml",
+    "--cov-fail-under=90",
+    "--no-cov-on-fail",
 ]
 markers = [
     "unit: Unit tests that don't require external dependencies",
@@ -81,6 +88,20 @@ markers = [
     "fast: Fast-running tests",
     "slow: Slow-running tests",
     "timeout: Timeout for test execution (provided by pytest-timeout)",
+]
+# Note: Target coverage is 95% (warning threshold in CI), fail threshold is 90%
+
+[tool.coverage.run]
+source = ["src/glpkg"]
+omit = ["tests/*", "*/tests/*"]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
 ]
 
 [tool.bumpversion]
