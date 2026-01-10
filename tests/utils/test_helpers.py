@@ -3,15 +3,49 @@ Test helper utilities for script execution and validation.
 
 This module contains script execution logic extracted from the TestOrchestrator
 class in the monolithic test file. It provides utilities for running the
-upload script as a subprocess and validating results.
+upload script via direct module invocation and validating results.
+
+Updated to use direct module invocation instead of subprocess execution
+for better integration with the new modular structure in gitlab_pkg_upload.
 """
 
+import contextlib
+import io
 import os
-import subprocess
+import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
+
+# Import from the new modular structure
+try:
+    from gitlab_pkg_upload.cli import main as cli_main
+    from gitlab_pkg_upload.models import (
+        AuthenticationError,
+        ConfigurationError,
+        DuplicatePolicy,
+        FileValidationError,
+        GitLabUploadError,
+        NetworkError,
+        ProjectResolutionError,
+        UploadConfig,
+    )
+
+    CLI_AVAILABLE = True
+except ImportError:
+    cli_main = None
+    CLI_AVAILABLE = False
+    # Define placeholder exit codes when module not available
+    AuthenticationError = None
+    ConfigurationError = None
+    DuplicatePolicy = None
+    FileValidationError = None
+    GitLabUploadError = None
+    NetworkError = None
+    ProjectResolutionError = None
+    UploadConfig = None
 
 
 @dataclass
@@ -89,10 +123,14 @@ class UploadResult:
 
 class ScriptExecutor:
     """
-    Handles execution of the gitlab-pkg-upload.py script.
+    Handles execution of the gitlab-pkg-upload CLI.
 
     Extracted from the monolithic test file's UploadScriptInterface class.
-    This class manages subprocess execution of the upload script and result parsing.
+    This class manages execution of the upload CLI via direct module invocation
+    and result parsing.
+
+    Updated to use direct module invocation instead of subprocess execution
+    for better integration with the new modular structure.
     """
 
     def __init__(self, script_path: Optional[Path] = None):
@@ -100,20 +138,29 @@ class ScriptExecutor:
         Initialize script executor.
 
         Args:
-            script_path: Path to the upload script. If None, uses default location.
+            script_path: Path to the upload script. If None, uses direct module invocation.
+                        This parameter is kept for backward compatibility but is
+                        ignored when CLI_AVAILABLE is True.
         """
-        if script_path is None:
-            # Default to the upload script in the same directory as the test
-            script_path = Path(__file__).parent.parent.parent / "gitlab-pkg-upload.py"
-
         self.script_path = script_path
+        self._use_direct_invocation = CLI_AVAILABLE
 
-        if not self.script_path.exists():
-            raise FileNotFoundError(f"Upload script not found at: {self.script_path}")
+        # If direct invocation is not available, fall back to subprocess
+        if not self._use_direct_invocation:
+            if script_path is None:
+                # Default to the upload script in the same directory as the test
+                script_path = Path(__file__).parent.parent.parent / "gitlab-pkg-upload.py"
+            self.script_path = script_path
+
+            if not self.script_path.exists():
+                raise FileNotFoundError(f"Upload script not found at: {self.script_path}")
 
     def execute_upload(self, execution: UploadExecution) -> UploadResult:
         """
         Execute upload script with given configuration.
+
+        Uses direct module invocation when available, falls back to subprocess
+        when the gitlab_pkg_upload module is not importable.
 
         Args:
             execution: Upload execution configuration
@@ -133,6 +180,162 @@ class ScriptExecutor:
             if result.json_data:
                 print(result.json_data["success"])
         """
+        if self._use_direct_invocation:
+            return self._execute_direct(execution)
+        else:
+            return self._execute_subprocess(execution)
+
+    def _execute_direct(self, execution: UploadExecution) -> UploadResult:
+        """
+        Execute upload via direct module invocation with timeout handling.
+
+        Args:
+            execution: Upload execution configuration
+
+        Returns:
+            UploadResult with execution details
+        """
+        start_time = time.time()
+
+        # Extract argv from command (skip the script path)
+        argv = execution.command[1:] if len(execution.command) > 1 else []
+
+        # Capture stdout and stderr
+        stdout_capture = io.StringIO()
+        stderr_capture = io.StringIO()
+
+        # Save original environment and argv
+        original_env = os.environ.copy()
+        original_cwd = os.getcwd()
+
+        exit_code = 0
+        timed_out = False
+
+        def run_cli():
+            """Inner function to run CLI, to be executed with timeout."""
+            nonlocal exit_code
+            try:
+                cli_main(argv)
+                exit_code = 0
+            except SystemExit as e:
+                exit_code = e.code if isinstance(e.code, int) else 1
+            except GitLabUploadError as e:
+                exit_code = e.exit_code
+                print(str(e), file=sys.stderr)
+            except Exception as e:
+                exit_code = 1
+                print(f"Error: {e}", file=sys.stderr)
+
+        try:
+            # Update environment if needed
+            if execution.env_vars:
+                os.environ.update(execution.env_vars)
+
+            # Change working directory if specified
+            if execution.working_directory:
+                os.chdir(execution.working_directory)
+
+            # Execute CLI with captured output and timeout
+            with contextlib.redirect_stdout(stdout_capture), contextlib.redirect_stderr(stderr_capture):
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(run_cli)
+                    try:
+                        future.result(timeout=execution.timeout)
+                    except FuturesTimeoutError:
+                        timed_out = True
+                        exit_code = -1
+
+        finally:
+            # Restore original environment
+            os.environ.clear()
+            os.environ.update(original_env)
+            # Restore working directory
+            os.chdir(original_cwd)
+
+        duration = time.time() - start_time
+
+        # Handle timeout case - return early with timeout error
+        if timed_out:
+            return UploadResult(
+                success=False,
+                exit_code=-1,
+                stdout=stdout_capture.getvalue(),
+                stderr=stderr_capture.getvalue(),
+                duration=duration,
+                error_message=f"Script execution timed out after {execution.timeout} seconds",
+                uploaded_files=[],
+                upload_urls=[],
+                json_data=None,
+            )
+
+        stdout = stdout_capture.getvalue()
+        stderr = stderr_capture.getvalue()
+
+        # Parse JSON output if enabled
+        json_data = None
+        if execution.use_json_output:
+            json_data = self._parse_json_output(stdout)
+
+        # Extract uploaded files and URLs
+        if json_data is not None:
+            uploaded_files, upload_urls = self._extract_data_from_json(json_data)
+        else:
+            uploaded_files = self._extract_uploaded_files(stdout)
+            upload_urls = self._extract_upload_urls(stdout)
+
+        # Determine success
+        if json_data is not None:
+            # Use JSON data for success determination
+            success = (
+                json_data.get("success", False)
+                and exit_code == execution.expected_exit_code
+                and json_data.get("exit_code", -1) == execution.expected_exit_code
+            )
+        else:
+            # Use traditional pattern matching
+            success = (
+                exit_code == execution.expected_exit_code
+                and self._check_output_patterns(
+                    stdout, execution.expected_output_patterns
+                )
+            )
+
+        error_message = None
+        if not success:
+            if json_data is not None and "error" in json_data:
+                error_message = f"{json_data.get('error_type', 'Error')}: {json_data.get('error', 'Unknown error')}"
+            elif exit_code != execution.expected_exit_code:
+                error_message = f"Unexpected exit code: {exit_code} (expected {execution.expected_exit_code})"
+            else:
+                error_message = "Expected output patterns not found"
+
+            if stderr:
+                error_message += f". Stderr: {stderr}"
+
+        return UploadResult(
+            success=success,
+            exit_code=exit_code,
+            stdout=stdout,
+            stderr=stderr,
+            duration=duration,
+            error_message=error_message,
+            uploaded_files=uploaded_files,
+            upload_urls=upload_urls,
+            json_data=json_data,
+        )
+
+    def _execute_subprocess(self, execution: UploadExecution) -> UploadResult:
+        """
+        Execute upload via subprocess (fallback when module not available).
+
+        Args:
+            execution: Upload execution configuration
+
+        Returns:
+            UploadResult with execution details
+        """
+        import subprocess
+
         start_time = time.time()
 
         try:
@@ -263,7 +466,11 @@ class ScriptExecutor:
         ):
             raise ValueError("version is required and cannot be empty")
 
-        command = [str(self.script_path)]
+        # Use program name for direct invocation, script path for subprocess fallback
+        if self._use_direct_invocation:
+            command = ["gitlab-pkg-upload"]
+        else:
+            command = [str(self.script_path)]
 
         # Add common parameters
         if "package_name" in kwargs:

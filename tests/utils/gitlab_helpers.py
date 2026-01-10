@@ -4,11 +4,14 @@ GitLab API interaction utilities for test validation and cleanup.
 This module contains GitLab verification methods extracted from the GitLabTestClient
 class in the monolithic test file. It provides utilities for interacting with the
 GitLab API for upload verification and package management.
+
+Updated to use exception models from the new gitlab_pkg_upload module
+for better error categorization and testing of exception handling.
 """
 
 import hashlib
 import time
-from typing import List, Optional, Dict, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -19,6 +22,24 @@ except ImportError:
     # Handle case where python-gitlab is not available
     Gitlab = None
     GitlabError = Exception
+
+# Import exception models from the new modular structure
+try:
+    from gitlab_pkg_upload.models import (
+        AuthenticationError,
+        GitLabUploadError,
+        NetworkError,
+        ProjectResolutionError,
+    )
+
+    EXCEPTION_MODELS_AVAILABLE = True
+except ImportError:
+    # Fall back to basic exceptions when gitlab_pkg_upload is not available
+    EXCEPTION_MODELS_AVAILABLE = False
+    GitLabUploadError = Exception
+    AuthenticationError = Exception
+    ProjectResolutionError = Exception
+    NetworkError = Exception
 
 
 class GitLabVerifier:
@@ -53,6 +74,11 @@ class GitLabVerifier:
 
         Returns:
             True if package exists, False otherwise
+
+        Raises:
+            AuthenticationError: If authentication fails
+            ProjectResolutionError: If project cannot be accessed
+            NetworkError: If network operation fails
         """
         try:
             project = self.gl.projects.get(self.project_id)
@@ -65,9 +91,24 @@ class GitLabVerifier:
 
             return False
 
-        except Exception as e:
-            print(f"Error checking package existence: {e}")
-            return False
+        except GitlabError as e:
+            error_str = str(e).lower()
+            if "401" in error_str or "unauthorized" in error_str or "authentication" in error_str:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise AuthenticationError(f"Authentication failed while checking package existence: {e}")
+                raise
+            elif "404" in error_str or "not found" in error_str:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise ProjectResolutionError(f"Project not found while checking package existence: {e}")
+                raise
+            else:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise NetworkError(f"Network error while checking package existence: {e}")
+                raise
+        except (ConnectionError, TimeoutError, OSError) as e:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise NetworkError(f"Network error while checking package existence: {e}")
+            raise
 
     def verify_file_upload(
         self,
@@ -162,9 +203,24 @@ class GitLabVerifier:
 
             return True
 
-        except Exception as e:
-            print(f"Upload verification failed for {filename}: {e}")
-            return False
+        except GitlabError as e:
+            error_str = str(e).lower()
+            if "401" in error_str or "unauthorized" in error_str or "authentication" in error_str:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise AuthenticationError(f"Authentication failed during upload verification for {filename}: {e}")
+                raise
+            elif "404" in error_str or "not found" in error_str:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise ProjectResolutionError(f"Project/package not found during upload verification for {filename}: {e}")
+                raise
+            else:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise NetworkError(f"Network error during upload verification for {filename}: {e}")
+                raise
+        except (ConnectionError, TimeoutError, OSError) as e:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise NetworkError(f"Network error during upload verification for {filename}: {e}")
+            raise
 
     def get_download_url(
         self, package_name: str, version: str, filename: str
@@ -232,9 +288,24 @@ class GitLabVerifier:
 
             return None
 
-        except Exception as e:
-            print(f"Failed to get download URL for {filename}: {e}")
-            return None
+        except GitlabError as e:
+            error_str = str(e).lower()
+            if "401" in error_str or "unauthorized" in error_str or "authentication" in error_str:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise AuthenticationError(f"Authentication failed getting download URL for {filename}: {e}")
+                raise
+            elif "404" in error_str or "not found" in error_str:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise ProjectResolutionError(f"Project/package not found getting download URL for {filename}: {e}")
+                raise
+            else:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise NetworkError(f"Network error getting download URL for {filename}: {e}")
+                raise
+        except (ConnectionError, TimeoutError, OSError) as e:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise NetworkError(f"Network error getting download URL for {filename}: {e}")
+            raise
 
     def download_and_verify_content(
         self, package_name: str, version: str, filename: str, expected_checksum: str
@@ -282,16 +353,35 @@ class GitLabVerifier:
             print(f"Download and verification successful for {filename}")
             return True
 
-        except Exception as e:
-            print(f"Download and verification failed for {filename}: {e}")
-            # Special handling for subdirectory files
-            if "/" in filename:
-                print(
-                    f"File '{filename}' contains subdirectory path. "
-                    f"Assuming verification success due to GitLab limitations."
-                )
-                return True
-            return False
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code if e.response is not None else None
+            if status_code == 401 or status_code == 403:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise AuthenticationError(f"Authentication failed during download for {filename}: {e}")
+                raise
+            elif status_code == 404:
+                # Special handling for subdirectory files
+                if "/" in filename:
+                    print(
+                        f"File '{filename}' contains subdirectory path. "
+                        f"Assuming verification success due to GitLab limitations."
+                    )
+                    return True
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise ProjectResolutionError(f"File not found during download for {filename}: {e}")
+                raise
+            else:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise NetworkError(f"HTTP error during download for {filename}: {e}")
+                raise
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise NetworkError(f"Network error during download for {filename}: {e}")
+            raise
+        except (ConnectionError, TimeoutError, OSError) as e:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise NetworkError(f"Network error during download for {filename}: {e}")
+            raise
 
     def list_package_files(
         self, package_name: str, version: str
@@ -337,9 +427,24 @@ class GitLabVerifier:
 
             return file_list
 
-        except Exception as e:
-            print(f"Failed to list package files: {e}")
-            return []
+        except GitlabError as e:
+            error_str = str(e).lower()
+            if "401" in error_str or "unauthorized" in error_str or "authentication" in error_str:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise AuthenticationError(f"Authentication failed listing package files: {e}")
+                raise
+            elif "404" in error_str or "not found" in error_str:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise ProjectResolutionError(f"Project/package not found listing package files: {e}")
+                raise
+            else:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise NetworkError(f"Network error listing package files: {e}")
+                raise
+        except (ConnectionError, TimeoutError, OSError) as e:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise NetworkError(f"Network error listing package files: {e}")
+            raise
 
     def delete_package(self, package_name: str, version: str) -> bool:
         """
@@ -372,9 +477,24 @@ class GitLabVerifier:
             print(f"Deleted package: {package_name} v{version}")
             return True
 
-        except Exception as e:
-            print(f"Failed to delete package {package_name} v{version}: {e}")
-            return False
+        except GitlabError as e:
+            error_str = str(e).lower()
+            if "401" in error_str or "unauthorized" in error_str or "authentication" in error_str:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise AuthenticationError(f"Authentication failed deleting package {package_name} v{version}: {e}")
+                raise
+            elif "404" in error_str or "not found" in error_str:
+                # Package not found - consider deletion successful
+                print(f"Package {package_name} v{version} not found (already deleted)")
+                return True
+            else:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise NetworkError(f"Network error deleting package {package_name} v{version}: {e}")
+                raise
+        except (ConnectionError, TimeoutError, OSError) as e:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise NetworkError(f"Network error deleting package {package_name} v{version}: {e}")
+            raise
 
     def cleanup_test_packages(self, package_prefix: str = "test-") -> Tuple[int, int]:
         """
@@ -403,15 +523,40 @@ class GitLabVerifier:
                     package.delete()
                     print(f"Deleted test package: {package.name} v{package.version}")
                     successful += 1
-                except Exception as e:
-                    print(f"Failed to delete test package {package.name}: {e}")
-                    failed += 1
+                except GitlabError as e:
+                    error_str = str(e).lower()
+                    if "401" in error_str or "unauthorized" in error_str or "authentication" in error_str:
+                        if EXCEPTION_MODELS_AVAILABLE:
+                            raise AuthenticationError(f"Authentication failed deleting test package {package.name}: {e}")
+                        raise
+                    elif "404" in error_str or "not found" in error_str:
+                        # Package already deleted
+                        print(f"Test package {package.name} already deleted")
+                        successful += 1
+                    else:
+                        print(f"Failed to delete test package {package.name}: {e}")
+                        failed += 1
 
             return successful, failed
 
-        except Exception as e:
-            print(f"Failed to cleanup test packages: {e}")
-            return 0, 0
+        except GitlabError as e:
+            error_str = str(e).lower()
+            if "401" in error_str or "unauthorized" in error_str or "authentication" in error_str:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise AuthenticationError(f"Authentication failed during cleanup: {e}")
+                raise
+            elif "404" in error_str or "not found" in error_str:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise ProjectResolutionError(f"Project not found during cleanup: {e}")
+                raise
+            else:
+                if EXCEPTION_MODELS_AVAILABLE:
+                    raise NetworkError(f"Network error during cleanup: {e}")
+                raise
+        except (ConnectionError, TimeoutError, OSError) as e:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise NetworkError(f"Network error during cleanup: {e}")
+            raise
 
 
 def validate_upload_consistency(
@@ -463,9 +608,30 @@ def validate_upload_consistency(
         print(f"Upload consistency validation successful for {filename}")
         return True
 
-    except Exception as e:
-        print(f"Upload consistency validation failed with exception: {e}")
-        return False
+    except (AuthenticationError, ProjectResolutionError, NetworkError):
+        # Re-raise typed exceptions to propagate them
+        raise
+    except GitLabUploadError:
+        # Re-raise base upload error to preserve exit semantics
+        raise
+    except GitlabError as e:
+        error_str = str(e).lower()
+        if "401" in error_str or "unauthorized" in error_str or "authentication" in error_str:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise AuthenticationError(f"Authentication failed during upload consistency validation: {e}")
+            raise
+        elif "404" in error_str or "not found" in error_str:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise ProjectResolutionError(f"Project/package not found during upload consistency validation: {e}")
+            raise
+        else:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise NetworkError(f"Network error during upload consistency validation: {e}")
+            raise
+    except (ConnectionError, TimeoutError, OSError) as e:
+        if EXCEPTION_MODELS_AVAILABLE:
+            raise NetworkError(f"Network error during upload consistency validation: {e}")
+        raise
 
 
 def wait_for_package_availability(
@@ -518,13 +684,31 @@ def create_gitlab_verifier(
         GitLabVerifier instance
 
     Raises:
-        ValueError: If project cannot be accessed
+        AuthenticationError: If authentication fails
+        ProjectResolutionError: If project cannot be accessed
+        NetworkError: If network operation fails
     """
     try:
         project = gitlab_client.projects.get(project_path)
         return GitLabVerifier(gitlab_client, project.id, token)
     except GitlabError as e:
-        raise ValueError(f"Failed to access project {project_path}: {e}")
+        error_str = str(e).lower()
+        if "401" in error_str or "unauthorized" in error_str or "authentication" in error_str:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise AuthenticationError(f"Authentication failed accessing project {project_path}: {e}")
+            raise
+        elif "404" in error_str or "not found" in error_str:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise ProjectResolutionError(f"Project not found: {project_path}: {e}")
+            raise
+        else:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise NetworkError(f"Network error accessing project {project_path}: {e}")
+            raise
+    except (ConnectionError, TimeoutError, OSError) as e:
+        if EXCEPTION_MODELS_AVAILABLE:
+            raise NetworkError(f"Network error accessing project {project_path}: {e}")
+        raise
 
 
 def verify_gitlab_api_access(gitlab_client, project_path: str) -> bool:
@@ -537,6 +721,11 @@ def verify_gitlab_api_access(gitlab_client, project_path: str) -> bool:
 
     Returns:
         True if access is verified, False otherwise
+
+    Raises:
+        AuthenticationError: If authentication fails
+        ProjectResolutionError: If project cannot be accessed
+        NetworkError: If network operation fails
     """
     try:
         # Test basic API access
@@ -551,11 +740,27 @@ def verify_gitlab_api_access(gitlab_client, project_path: str) -> bool:
         try:
             _ = project.packages.list(per_page=1, get_all=False)
             print("Package registry access verified")
-        except Exception as e:
+        except GitlabError as e:
+            # Package registry access is optional - log but don't fail
             print(f"Package registry access may be limited: {e}")
 
         return True
 
-    except Exception as e:
-        print(f"GitLab API access verification failed: {e}")
-        return False
+    except GitlabError as e:
+        error_str = str(e).lower()
+        if "401" in error_str or "unauthorized" in error_str or "authentication" in error_str:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise AuthenticationError(f"Authentication failed verifying API access: {e}")
+            raise
+        elif "404" in error_str or "not found" in error_str:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise ProjectResolutionError(f"Project not found verifying API access: {e}")
+            raise
+        else:
+            if EXCEPTION_MODELS_AVAILABLE:
+                raise NetworkError(f"Network error verifying API access: {e}")
+            raise
+    except (ConnectionError, TimeoutError, OSError) as e:
+        if EXCEPTION_MODELS_AVAILABLE:
+            raise NetworkError(f"Network error verifying API access: {e}")
+        raise

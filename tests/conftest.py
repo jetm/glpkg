@@ -18,17 +18,21 @@ from typing import Optional
 import pytest
 import requests
 
-# Import the classes we need to extract from the monolithic test file
+# Import from the new modular structure
 try:
-    from gitlab_common import ProjectResolver
-
     from gitlab import Gitlab
+
+    from gitlab_pkg_upload.cli import GitAutoDetector, ProjectResolver
+    from gitlab_pkg_upload.models import GitRemoteInfo, ProjectInfo
 
     GITLAB_AVAILABLE = True
 except ImportError:
-    # Handle case where python-gitlab is not available
+    # Handle case where python-gitlab or gitlab_pkg_upload is not available
     Gitlab = None
     ProjectResolver = None
+    GitAutoDetector = None
+    GitRemoteInfo = None
+    ProjectInfo = None
     GITLAB_AVAILABLE = False
 
 # Import our thread-safe rate limiter and performance utilities
@@ -793,13 +797,13 @@ def artifact_manager():
 @pytest.fixture
 def project_resolver(gitlab_client):
     """
-    Provide project resolver fixture using existing ProjectResolver from gitlab_common.
+    Provide project resolver fixture using ProjectResolver from gitlab_pkg_upload.cli.
 
     This fixture creates a ProjectResolver instance using the authenticated
     GitLab client for project identification and validation.
     """
     if not GITLAB_AVAILABLE or not ProjectResolver:
-        pytest.skip("python-gitlab or gitlab_common not available")
+        pytest.skip("python-gitlab or gitlab_pkg_upload not available")
 
     return ProjectResolver(gitlab_client.gl)
 
@@ -850,7 +854,8 @@ def project_path():
     """
     # Try to auto-detect project path from Git repository
     try:
-        from gitlab_common import GitAutoDetector
+        if not GitAutoDetector:
+            raise ImportError("GitAutoDetector not available")
 
         detector = GitAutoDetector()
         repo = detector.find_git_repository()
@@ -863,10 +868,10 @@ def project_path():
         pass
 
     # Fallback to environment variable or skip
-    project_path = os.environ.get("GITLAB_PROJECT_PATH")
-    if not project_path:
+    project_path_env = os.environ.get("GITLAB_PROJECT_PATH")
+    if not project_path_env:
         pytest.skip(
             "Could not auto-detect project path and GITLAB_PROJECT_PATH not set"
         )
 
-    return project_path
+    return project_path_env

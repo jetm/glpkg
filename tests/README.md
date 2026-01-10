@@ -151,7 +151,7 @@ Any arguments not matching convenience flags are passed directly to pytest, enab
 
 ```bash
 # Run specific test
-./run_tests.py tests/test_unit_basic.py::test_import_gitlab_common
+./run_tests.py tests/test_unit_basic.py::TestBasicFunctionality::test_import_gitlab_pkg_upload
 
 # Filter tests by name pattern
 ./run_tests.py -v -k "test_import" tests/

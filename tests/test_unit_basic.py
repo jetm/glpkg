@@ -19,15 +19,18 @@ class TestBasicFunctionality:
     """Basic unit tests for core functionality."""
 
     @pytest.mark.timeout(60)
-    def test_import_gitlab_common(self):
-        """Test that gitlab_common module can be imported."""
+    def test_import_gitlab_pkg_upload(self):
+        """Test that gitlab_pkg_upload module can be imported."""
         try:
-            import gitlab_common
+            from gitlab_pkg_upload import cli
+            from gitlab_pkg_upload import models
 
-            assert hasattr(gitlab_common, "ProjectResolver")
-            assert hasattr(gitlab_common, "GitAutoDetector")
+            assert hasattr(cli, "ProjectResolver")
+            assert hasattr(cli, "GitAutoDetector")
+            assert hasattr(models, "GitRemoteInfo")
+            assert hasattr(models, "ProjectInfo")
         except ImportError as e:
-            pytest.fail(f"Failed to import gitlab_common: {e}")
+            pytest.fail(f"Failed to import gitlab_pkg_upload: {e}")
 
     @pytest.mark.timeout(60)
     def test_import_main_script(self):
