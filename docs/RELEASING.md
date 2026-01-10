@@ -83,16 +83,109 @@ python dist/glpkg.pyz --version
 
 See `scripts/build_pyz.sh` for build script details.
 
+## Manual Release (Without GitHub Actions)
+
+If you need to publish a release manually without relying on GitHub Actions:
+
+### 1. Get the Current Version
+
+```bash
+# Extract version from pyproject.toml
+VERSION=$(grep -m1 'version = ' pyproject.toml | cut -d'"' -f2)
+echo "Version: ${VERSION}"
+
+# Or from Python
+VERSION=$(uv run python -c "import glpkg; print(glpkg.__version__)")
+echo "Version: ${VERSION}"
+```
+
+### 2. Build the Package
+
+```bash
+# Install build tool if needed
+uv pip install build
+
+# Build source distribution and wheel
+uv run python -m build
+
+# Verify build artifacts
+ls dist/
+# Should show: glpkg_cli-${VERSION}.tar.gz and glpkg_cli-${VERSION}-py3-none-any.whl
+```
+
+### 3. Publish to PyPI
+
+PyPI requires API token authentication (username/password is no longer supported).
+
+**Get an API token:**
+
+1. Log in to [PyPI](https://pypi.org/manage/account/)
+2. Go to Account Settings → API tokens
+3. Create a new token (scope: "Entire account" or project-specific)
+4. Copy the token (starts with `pypi-`)
+
+**Upload with the token:**
+
+```bash
+# Install twine if not already installed
+uv pip install twine
+
+# Upload to PyPI using API token
+TWINE_USERNAME=__token__ TWINE_PASSWORD=pypi-<your-api-token> uv run twine upload dist/glpkg_cli-${VERSION}*
+```
+
+Alternatively, configure credentials in `~/.pypirc`:
+
+```ini
+[pypi]
+username = __token__
+password = pypi-<your-api-token>
+```
+
+Then upload without environment variables:
+
+```bash
+uv run twine upload dist/glpkg_cli-${VERSION}*
+```
+
+For more information, see:
+
+- [API Tokens](https://pypi.org/help/#apitoken) - Create a token for manual uploads
+- [Trusted Publishers](https://pypi.org/help/#trusted-publishers) - Configure GitHub Actions for automated publishing
+
+### 4. Build and Upload .pyz Binary
+
+```bash
+# Build the .pyz binary
+./scripts/build_pyz.sh --tool shiv
+
+# Verify the binary works
+python dist/glpkg.pyz --version
+```
+
+Upload the .pyz binary to the GitHub release:
+
+```bash
+# Using GitHub CLI (gh)
+gh release upload v${VERSION} dist/glpkg.pyz
+
+# Or manually via GitHub web interface:
+# 1. Go to https://github.com/your-org/glpkg/releases/tag/v${VERSION}
+# 2. Click "Edit release"
+# 3. Drag and drop dist/glpkg.pyz into the "Attach binaries" area
+# 4. Click "Update release"
+```
+
 ## Verification Steps
 
 After publishing a release:
 
-1. **Check PyPI**: Visit `https://pypi.org/project/glpkg/`
+1. **Check PyPI**: Visit `https://pypi.org/project/glpkg-cli/`
 
 2. **Test PyPI installation**:
 
    ```bash
-   uv pip install glpkg==<version>
+   uv pip install glpkg-cli==<version>
    glpkg --version
    ```
 

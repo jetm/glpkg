@@ -10,15 +10,25 @@ A CLI tool for uploading files to GitLab's Generic Package Registry.
 
 ```bash
 # Using uv (recommended)
-uv pip install glpkg
+uv pip install glpkg-cli
 
 # Or using pip
-pip install glpkg
+pip install glpkg-cli
+```
+
+After installation, the `glpkg` command is available in your PATH:
+
+```bash
+# Verify installation
+glpkg --version
+
+# View available commands
+glpkg --help
 ```
 
 ### Universal Binary (.pyz)
 
-Download the pre-built universal binary from GitHub releases:
+Download the pre-built universal binary from GitHub releases. This is a self-contained executable that requires no installation - just Python 3.11+.
 
 ```bash
 # Download the latest release
@@ -32,6 +42,21 @@ chmod +x glpkg.pyz
 
 # Or run with Python
 python glpkg.pyz --help
+```
+
+Optionally, install the binary to a location in your PATH for easier access:
+
+```bash
+# Install to ~/.local/bin (user-local)
+mv glpkg.pyz ~/.local/bin/glpkg
+chmod +x ~/.local/bin/glpkg
+
+# Or install system-wide (requires sudo)
+sudo mv glpkg.pyz /usr/local/bin/glpkg
+sudo chmod +x /usr/local/bin/glpkg
+
+# Now use it like a regular command
+glpkg --help
 ```
 
 ### Development Installation
