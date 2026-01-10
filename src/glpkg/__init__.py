@@ -1,4 +1,4 @@
-"""GitLab Generic Package Upload Tool."""
+"""glpkg - GitLab Generic Package Upload Tool."""
 
 __version__ = "0.1.0"
 

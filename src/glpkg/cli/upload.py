@@ -1,10 +1,12 @@
-"""CLI entry point for gitlab-pkg-upload.
+"""Upload subcommand for glpkg CLI.
 
-This module provides the command-line interface for uploading files to GitLab's
-Generic Package Registry. It handles argument parsing, validation, and
-orchestrates the upload workflow.
+This module provides the upload subcommand implementation, including:
+- GitAutoDetector: Auto-detect GitLab project from Git repository
+- ProjectResolver: Resolve GitLab project ID from project path
+- UploadContextBuilder: Build upload context with all required components
+- Upload command registration and execution logic
 
-Supported flags:
+Supported upload-specific flags:
     Required:
         --package-name      Package name in the registry
         --package-version   Package version
@@ -16,14 +18,6 @@ Supported flags:
     Project specification:
         --project-url       Full GitLab project URL
         --project-path      Project path (namespace/project)
-        --gitlab-url        GitLab instance URL (default: https://gitlab.com)
-        --token             GitLab API token (or use GITLAB_TOKEN env var)
-
-    Project resolution (auto-detected or manual):
-        Auto-detection: Searches for .git directory and extracts GitLab project
-                       from git remotes (prioritizes 'origin' remote)
-        --project-url: Full GitLab project URL (e.g., https://gitlab.com/ns/proj)
-        --project-path: Project path with --gitlab-url (e.g., namespace/project)
 
     Duplicate handling:
         --duplicate-policy  How to handle duplicates: skip, replace, error
@@ -31,40 +25,10 @@ Supported flags:
     File mapping:
         --file-mapping      Rename files during upload (source:target format)
 
-    Verbosity (mutually exclusive):
-        --verbose           Enable verbose output
-        --quiet             Suppress non-essential output
-        --debug             Enable debug output
-
     Operational:
         --dry-run           Preview actions without executing
         --fail-fast         Stop on first failure
         --retry             Number of retry attempts
-        --json-output       Output results as JSON
-        --plain             Force plain text output (no colors)
-        --version           Display version number
-
-Usage examples:
-    # Upload a single file
-    gitlab-pkg-upload --package-name myapp --package-version 1.0.0 --files dist/app.tar.gz
-
-    # Upload multiple files
-    gitlab-pkg-upload --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz
-
-    # Upload from directory
-    gitlab-pkg-upload --package-name myapp --package-version 1.0.0 --directory dist/
-
-    # With file renaming
-    gitlab-pkg-upload --package-name myapp --package-version 1.0.0 \\
-        --files local.tar.gz --file-mapping local.tar.gz:remote.tar.gz
-
-    # Dry run with verbose output
-    gitlab-pkg-upload --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
-        --dry-run --verbose
-
-    # JSON output for CI/CD pipelines
-    gitlab-pkg-upload --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
-        --json-output
 """
 
 from __future__ import annotations
@@ -72,18 +36,16 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-import argcomplete
 import git
 from gitlab import Gitlab
 from gitlab.exceptions import GitlabAuthenticationError, GitlabGetError
-from rich.console import Console
-from rich.logging import RichHandler
 
-from gitlab_pkg_upload.duplicate_detector import DuplicateDetector
-from gitlab_pkg_upload.models import (
+from glpkg.cli.main import determine_verbosity
+from glpkg.duplicate_detector import DuplicateDetector
+from glpkg.formatters import OutputFormatter
+from glpkg.models import (
     AuthenticationError,
     ConfigurationError,
     DuplicatePolicy,
@@ -95,8 +57,10 @@ from gitlab_pkg_upload.models import (
     UploadContext,
     enhance_error_message,
 )
-from gitlab_pkg_upload.validators import (
+from glpkg.uploader import upload_files
+from glpkg.validators import (
     DEFAULT_GITLAB_URL,
+    collect_files,
     get_gitlab_token,
     normalize_gitlab_url,
     parse_git_url,
@@ -105,17 +69,10 @@ from gitlab_pkg_upload.validators import (
 if TYPE_CHECKING:
     pass
 
-from gitlab_pkg_upload.formatters import OutputFormatter
-from gitlab_pkg_upload.uploader import upload_files
-from gitlab_pkg_upload.validators import collect_files
-
 # Module-level logger
 logger = logging.getLogger(__name__)
 
 # Exception exit code mapping for standard Python exceptions
-# Custom exceptions (GitLabUploadError subclasses) use their exit_code attribute.
-# Standard Python exceptions use this mapping table.
-# Unknown exceptions default to exit code 1.
 EXCEPTION_EXIT_CODE_MAP: dict[type, int] = {
     FileNotFoundError: 5,  # File validation failure
     PermissionError: 5,  # File validation failure
@@ -123,448 +80,6 @@ EXCEPTION_EXIT_CODE_MAP: dict[type, int] = {
     ConnectionError: 6,  # Network error
     TimeoutError: 6,  # Network error
 }
-
-
-def determine_verbosity(args: argparse.Namespace) -> str:
-    """Determine verbosity level from parsed arguments.
-
-    Checks verbosity flags in priority order: debug > verbose > quiet > normal.
-
-    Args:
-        args: Parsed argument namespace from argparse.
-
-    Returns:
-        One of: 'debug', 'verbose', 'quiet', or 'normal'.
-    """
-    if args.debug:
-        return "debug"
-    elif args.verbose:
-        return "verbose"
-    elif args.quiet:
-        return "quiet"
-    else:
-        return "normal"
-
-
-def setup_logging(args: argparse.Namespace) -> None:
-    """Configure logging based on verbosity flags.
-
-    Sets up Python's root logger with RichHandler for enhanced console output.
-    When --json-output is enabled, logs go to stderr to keep stdout clean for JSON.
-
-    Args:
-        args: Parsed argument namespace containing verbosity flags.
-    """
-    verbosity = determine_verbosity(args)
-
-    # Determine log level based on verbosity
-    log_levels = {
-        "debug": logging.DEBUG,
-        "verbose": logging.INFO,
-        "quiet": logging.WARNING,
-        "normal": logging.INFO,
-    }
-    level = log_levels.get(verbosity, logging.INFO)
-
-    # Use stderr when json_output is enabled to keep stdout clean for JSON
-    stream = sys.stderr if args.json_output else sys.stdout
-
-    # Configure RichHandler with appropriate settings
-    rich_handler = RichHandler(
-        console=Console(file=stream),
-        show_time=True,
-        show_path=False,
-        markup=True,
-        rich_tracebacks=True,
-    )
-
-    # Configure root logger
-    logging.basicConfig(
-        level=level,
-        format="%(message)s",
-        handlers=[rich_handler],
-        force=True,  # Reconfigure if already configured
-    )
-
-    logger.debug(f"Logging configured: level={verbosity}, stream={'stderr' if args.json_output else 'stdout'}")
-
-
-def create_argument_parser() -> argparse.ArgumentParser:
-    """Create and configure the argument parser for gitlab-pkg-upload.
-
-    Returns:
-        Configured ArgumentParser instance with all supported arguments.
-    """
-    parser = argparse.ArgumentParser(
-        prog="gitlab-pkg-upload",
-        description=(
-            "Upload files to GitLab's Generic Package Registry.\n\n"
-            "This tool uploads one or more files to a GitLab project's package registry, "
-            "with support for duplicate detection, retry handling, and various output formats."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""\
-Examples:
-  # Upload a single file
-  %(prog)s --package-name myapp --package-version 1.0.0 --files dist/app.tar.gz
-
-  # Upload multiple files
-  %(prog)s --package-name myapp --package-version 1.0.0 --files file1.bin file2.bin
-
-  # Upload all files from a directory
-  %(prog)s --package-name myapp --package-version 1.0.0 --directory dist/
-
-  # With file renaming (source:target format)
-  %(prog)s --package-name myapp --package-version 1.0.0 \\
-      --files local.tar.gz --file-mapping local.tar.gz:app-1.0.0.tar.gz
-
-  # Skip duplicates (default behavior)
-  %(prog)s --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
-      --duplicate-policy skip
-
-  # Replace existing files
-  %(prog)s --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
-      --duplicate-policy replace
-
-  # Dry run with verbose output
-  %(prog)s --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
-      --dry-run --verbose
-
-  # JSON output for CI/CD pipelines
-  %(prog)s --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
-      --json-output --quiet
-
-  # Specify project explicitly
-  %(prog)s --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
-      --project-url https://gitlab.com/mygroup/myproject
-
-  # Use custom GitLab instance
-  %(prog)s --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
-      --gitlab-url https://gitlab.example.com --project-path mygroup/myproject
-
-Environment variables:
-  GITLAB_TOKEN    GitLab API token (alternative to --token)
-""",
-    )
-
-    # Required arguments (validated in validate_flags to allow --version to work alone)
-    required_group = parser.add_argument_group("required arguments")
-    required_group.add_argument(
-        "--package-name",
-        type=str,
-        metavar="NAME",
-        help="Package name in the GitLab registry (e.g., 'myapp', 'my-library')",
-    )
-    required_group.add_argument(
-        "--package-version",
-        type=str,
-        metavar="VERSION",
-        help="Package version (e.g., '1.0.0', '2.3.1-beta')",
-    )
-
-    # File input arguments (mutual exclusion validated in validate_flags for exit code 3)
-    file_input_group = parser.add_argument_group(
-        "file input (one required)",
-        "Specify files to upload using either --files or --directory",
-    )
-    file_input_group.add_argument(
-        "--files",
-        nargs="+",
-        type=str,
-        metavar="FILE",
-        help="List of files to upload (e.g., --files file1.tar.gz file2.tar.gz)",
-    )
-    file_input_group.add_argument(
-        "--directory",
-        type=str,
-        metavar="DIR",
-        help="Directory containing files to upload (uploads all top-level files)",
-    )
-
-    # Project specification arguments
-    project_group = parser.add_argument_group(
-        "project specification",
-        "Specify the target GitLab project (auto-detected from Git remote if not provided)",
-    )
-    project_group.add_argument(
-        "--project-url",
-        type=str,
-        metavar="URL",
-        help="Full GitLab project URL (e.g., 'https://gitlab.com/namespace/project')",
-    )
-    project_group.add_argument(
-        "--project-path",
-        type=str,
-        metavar="PATH",
-        help="Project path in namespace/project format (e.g., 'mygroup/myproject')",
-    )
-    project_group.add_argument(
-        "--gitlab-url",
-        type=str,
-        default=DEFAULT_GITLAB_URL,
-        metavar="URL",
-        help=f"GitLab instance URL (default: {DEFAULT_GITLAB_URL})",
-    )
-    project_group.add_argument(
-        "--token",
-        type=str,
-        metavar="TOKEN",
-        help="GitLab API token (or set GITLAB_TOKEN environment variable)",
-    )
-
-    # Duplicate handling
-    parser.add_argument(
-        "--duplicate-policy",
-        type=str,
-        choices=["skip", "replace", "error"],
-        default="skip",
-        metavar="POLICY",
-        help=(
-            "How to handle duplicate files: "
-            "'skip' (default) - skip uploading, "
-            "'replace' - delete existing and upload new, "
-            "'error' - fail with error"
-        ),
-    )
-
-    # File mapping
-    parser.add_argument(
-        "--file-mapping",
-        action="append",
-        type=str,
-        metavar="SOURCE:TARGET",
-        help=(
-            "Rename files during upload using source:target format. "
-            "Can be specified multiple times (e.g., --file-mapping local.bin:remote.bin). "
-            "Only valid with --files, not --directory."
-        ),
-    )
-
-    # Verbosity flags (mutual exclusion validated in validate_flags for exit code 3)
-    verbosity_group = parser.add_argument_group(
-        "verbosity",
-        "Control output verbosity (mutually exclusive)",
-    )
-    verbosity_group.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose output with detailed progress information",
-    )
-    verbosity_group.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Suppress non-essential output (only show errors and final summary)",
-    )
-    verbosity_group.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug output with full diagnostic information",
-    )
-
-    # Operational flags
-    operational_group = parser.add_argument_group("operational options")
-    operational_group.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Preview actions without executing uploads (shows what would be done)",
-    )
-    operational_group.add_argument(
-        "--fail-fast",
-        action="store_true",
-        help="Stop immediately on first upload failure (default: continue with remaining files)",
-    )
-    operational_group.add_argument(
-        "--retry",
-        type=int,
-        default=0,
-        metavar="N",
-        help="Number of retry attempts for failed uploads (default: 0)",
-    )
-
-    # Output format flags
-    output_group = parser.add_argument_group("output format")
-    output_group.add_argument(
-        "--json-output",
-        action="store_true",
-        help="Output results as JSON (useful for CI/CD pipelines and scripting)",
-    )
-    output_group.add_argument(
-        "--plain",
-        action="store_true",
-        help="Force plain text output without colors or formatting",
-    )
-
-    # Version flag - handled early via action="version" to bypass other requirements
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {get_version()}",
-        help="Display version number and exit",
-    )
-
-    return parser
-
-
-def validate_flags(args: argparse.Namespace) -> None:
-    """Validate flag combinations and detect conflicts.
-
-    Checks for:
-    - Required arguments (--package-name and --package-version for upload runs)
-    - Conflicting file input (--files and --directory)
-    - Conflicting verbosity flags (--verbose, --quiet, --debug)
-    - Conflicting project specification (--project-url with --project-path)
-    - File input requirement (--files or --directory must be provided)
-    - File mapping constraint (--file-mapping only valid with --files)
-
-    Args:
-        args: Parsed argument namespace from argparse.
-
-    Raises:
-        SystemExit: With exit code 3 (ConfigurationError) if conflicts are detected.
-    """
-    errors: list[str] = []
-
-    # Check required arguments for upload runs
-    if not args.package_name:
-        errors.append(
-            "--package-name is required. "
-            "Specify the package name in the GitLab registry."
-        )
-    if not args.package_version:
-        errors.append(
-            "--package-version is required. "
-            "Specify the package version."
-        )
-
-    # Check for conflicting file input flags
-    if args.files and args.directory:
-        errors.append(
-            "Cannot specify both --files and --directory. "
-            "Use --files for explicit file list or --directory to upload all files from a directory."
-        )
-
-    # Check for conflicting verbosity flags
-    verbosity_flags = []
-    if args.verbose:
-        verbosity_flags.append("--verbose")
-    if args.quiet:
-        verbosity_flags.append("--quiet")
-    if args.debug:
-        verbosity_flags.append("--debug")
-    if len(verbosity_flags) > 1:
-        errors.append(
-            f"Cannot specify multiple verbosity flags: {', '.join(verbosity_flags)}. "
-            "Choose one of --verbose, --quiet, or --debug."
-        )
-
-    # Check for conflicting project specification
-    if args.project_url and args.project_path:
-        errors.append(
-            "Cannot specify both --project-url and --project-path. "
-            "Use --project-url for full URLs or --project-path with --gitlab-url."
-        )
-
-    # Check that file input is provided
-    if not args.files and not args.directory:
-        errors.append(
-            "Either --files or --directory must be provided. "
-            "Use --files for explicit file list or --directory to upload all files from a directory."
-        )
-
-    # Check that file-mapping is only used with --files
-    if args.file_mapping and args.directory:
-        errors.append(
-            "--file-mapping can only be used with --files, not with --directory. "
-            "File mappings require explicit file specification."
-        )
-
-    # Check retry value is non-negative
-    if args.retry < 0:
-        errors.append(
-            f"--retry must be a non-negative integer, got {args.retry}."
-        )
-
-    # Report all errors
-    if errors:
-        for error in errors:
-            print(f"Error: {error}", file=sys.stderr)
-        print(
-            "\nUse --help for usage information.",
-            file=sys.stderr,
-        )
-        sys.exit(3)  # ConfigurationError exit code
-
-
-def get_version() -> str:
-    """Get the package version from pyproject.toml.
-
-    Returns:
-        Version string from pyproject.toml, or 'unknown' if not found.
-    """
-    try:
-        # Try to find pyproject.toml relative to this module
-        module_path = Path(__file__).parent
-        # Check in package location (installed)
-        pyproject_paths = [
-            module_path.parent.parent / "pyproject.toml",  # Development layout
-            module_path / "pyproject.toml",  # Alternate location
-        ]
-
-        for pyproject_path in pyproject_paths:
-            if pyproject_path.exists():
-                content = pyproject_path.read_text()
-                # Simple parsing - look for version = "x.y.z"
-                for line in content.splitlines():
-                    line = line.strip()
-                    if line.startswith("version") and "=" in line:
-                        # Extract version value
-                        _, _, value = line.partition("=")
-                        value = value.strip().strip('"').strip("'")
-                        return value
-
-        # Fallback: try importlib.metadata (for installed packages)
-        try:
-            from importlib.metadata import version as get_pkg_version
-
-            return get_pkg_version("gitlab-pkg-upload")
-        except Exception:
-            pass
-
-        return "unknown"
-    except Exception:
-        return "unknown"
-
-
-def parse_arguments(argv: list[str] | None = None) -> argparse.Namespace:
-    """Parse and validate command-line arguments.
-
-    Creates the argument parser, integrates shell completion with argcomplete,
-    parses arguments, and validates flag combinations.
-
-    Args:
-        argv: Command-line arguments to parse. If None, uses sys.argv[1:].
-
-    Returns:
-        Validated argument namespace.
-
-    Raises:
-        SystemExit: If argument parsing fails or flag conflicts are detected.
-    """
-    parser = create_argument_parser()
-
-    # Enable shell completion via argcomplete
-    argcomplete.autocomplete(parser)
-
-    # Parse arguments
-    args = parser.parse_args(argv)
-
-    # Validate flag combinations
-    validate_flags(args)
-
-    # Convert duplicate_policy string to enum
-    args.duplicate_policy = DuplicatePolicy(args.duplicate_policy)
-
-    return args
 
 
 class GitAutoDetector:
@@ -720,8 +235,8 @@ class GitAutoDetector:
                     f"Parse error: {e}\n\n"
                     "SOLUTION:\n"
                     "Supported Git URL formats:\n"
-                    "  • HTTPS: https://gitlab.com/namespace/project.git\n"
-                    "  • SSH: git@gitlab.com:namespace/project.git\n\n"
+                    "  - HTTPS: https://gitlab.com/namespace/project.git\n"
+                    "  - SSH: git@gitlab.com:namespace/project.git\n\n"
                     "Use manual project specification:\n"
                     "  --project-url https://gitlab.com/namespace/project\n"
                     "  --project-path namespace/project"
@@ -783,7 +298,7 @@ class GitAutoDetector:
                     break  # Only use first valid URL per remote
 
         if not gitlab_remotes:
-            remote_list = "\n".join(f"  • {url}" for url in all_remote_urls)
+            remote_list = "\n".join(f"  - {url}" for url in all_remote_urls)
             raise ProjectResolutionError(
                 f"No GitLab remotes found in repository.\n\n"
                 f"Found remotes:\n{remote_list}\n\n"
@@ -794,8 +309,8 @@ class GitAutoDetector:
                 "   --project-url https://gitlab.com/namespace/project\n"
                 "   --project-path namespace/project\n\n"
                 "Supported GitLab URL formats:\n"
-                "  • HTTPS: https://gitlab.com/namespace/project.git\n"
-                "  • SSH: git@gitlab.com:namespace/project.git"
+                "  - HTTPS: https://gitlab.com/namespace/project.git\n"
+                "  - SSH: git@gitlab.com:namespace/project.git"
             )
 
         # Prioritize 'origin' remote
@@ -851,8 +366,8 @@ class ProjectResolver:
                 "SOLUTION:\n"
                 "Expected URL format: https://gitlab.com/namespace/project\n\n"
                 "Examples:\n"
-                "  • https://gitlab.com/mycompany/my-project\n"
-                "  • https://gitlab.example.com/group/subgroup/project"
+                "  - https://gitlab.com/mycompany/my-project\n"
+                "  - https://gitlab.example.com/group/subgroup/project"
             )
 
         # Split project_path into namespace and project_name
@@ -987,8 +502,8 @@ class UploadContextBuilder:
                 verbosity=verbosity,
                 dry_run=args.dry_run,
                 fail_fast=args.fail_fast,
-                json_output=args.json_output,
-                plain_output=args.plain,
+                json_output=getattr(args, "json_output", False),
+                plain_output=getattr(args, "plain", False),
                 gitlab_url=gitlab_url,
                 token=token,  # Resolved token (from CLI or environment)
             )
@@ -1020,9 +535,9 @@ class UploadContextBuilder:
             raise ConfigurationError(
                 f"Failed to build upload context: {e}\n\n"
                 "SOLUTION:\n"
-                "  • Verify all required arguments are provided\n"
-                "  • Check that project ID is valid\n"
-                "  • Ensure GitLab client is properly authenticated"
+                "  - Verify all required arguments are provided\n"
+                "  - Check that project ID is valid\n"
+                "  - Ensure GitLab client is properly authenticated"
             )
 
 
@@ -1100,8 +615,8 @@ def resolve_project_manually(
                 "SOLUTION:\n"
                 "Expected URL format: https://gitlab.com/namespace/project\n\n"
                 "Examples:\n"
-                "  • https://gitlab.com/mycompany/my-project\n"
-                "  • https://gitlab.example.com/group/subgroup/project"
+                "  - https://gitlab.com/mycompany/my-project\n"
+                "  - https://gitlab.example.com/group/subgroup/project"
             )
 
     elif project_path:
@@ -1114,9 +629,9 @@ def resolve_project_manually(
                 "Project path must contain at least namespace/project.\n\n"
                 "SOLUTION:\n"
                 "Examples of valid project paths:\n"
-                "  • mycompany/my-project\n"
-                "  • group/subgroup/project-name\n"
-                "  • username/personal-project"
+                "  - mycompany/my-project\n"
+                "  - group/subgroup/project-name\n"
+                "  - username/personal-project"
             )
 
         # Validate path components
@@ -1127,8 +642,8 @@ def resolve_project_manually(
                 "Path must contain at least namespace and project name.\n\n"
                 "SOLUTION:\n"
                 "Examples of valid project paths:\n"
-                "  • mycompany/my-project\n"
-                "  • group/subgroup/project-name"
+                "  - mycompany/my-project\n"
+                "  - group/subgroup/project-name"
             )
 
         logger.info(f"Using project path: {path} at {gitlab_url}")
@@ -1139,38 +654,277 @@ def resolve_project_manually(
             "No project specification provided.\n\n"
             "SOLUTION:\n"
             "Use one of the following:\n"
-            "  • --project-url https://gitlab.com/namespace/project\n"
-            "  • --project-path namespace/project --gitlab-url https://gitlab.com"
+            "  --project-url https://gitlab.com/namespace/project\n"
+            "  --project-path namespace/project --gitlab-url https://gitlab.com"
         )
 
 
-def main(argv: list[str] | None = None) -> None:
-    """Main entry point for the gitlab-pkg-upload CLI.
+def validate_upload_flags(args: argparse.Namespace) -> None:
+    """Validate upload-specific flag combinations and detect conflicts.
 
-    Parses command-line arguments, validates configuration, and orchestrates
-    the upload workflow.
+    Checks for:
+    - Required arguments (--package-name and --package-version)
+    - Conflicting file input (--files and --directory)
+    - Conflicting project specification (--project-url with --project-path)
+    - File input requirement (--files or --directory must be provided)
+    - File mapping constraint (--file-mapping only valid with --files)
 
     Args:
-        argv: Command-line arguments. If None, uses sys.argv[1:].
-    """
-    # Parse arguments
-    # Note: --version flag is handled automatically by argparse via action="version"
-    args = parse_arguments(argv)
+        args: Parsed argument namespace from argparse.
 
-    # Configure logging based on verbosity flags
-    setup_logging(args)
+    Raises:
+        SystemExit: With exit code 3 (ConfigurationError) if conflicts are detected.
+    """
+    errors: list[str] = []
+
+    # Check required arguments for upload runs
+    if not args.package_name:
+        errors.append(
+            "--package-name is required. "
+            "Specify the package name in the GitLab registry."
+        )
+    if not args.package_version:
+        errors.append(
+            "--package-version is required. "
+            "Specify the package version."
+        )
+
+    # Check for conflicting file input flags
+    if args.files and args.directory:
+        errors.append(
+            "Cannot specify both --files and --directory. "
+            "Use --files for explicit file list or --directory to upload all files from a directory."
+        )
+
+    # Check for conflicting project specification
+    if args.project_url and args.project_path:
+        errors.append(
+            "Cannot specify both --project-url and --project-path. "
+            "Use --project-url for full URLs or --project-path with --gitlab-url."
+        )
+
+    # Check that file input is provided
+    if not args.files and not args.directory:
+        errors.append(
+            "Either --files or --directory must be provided. "
+            "Use --files for explicit file list or --directory to upload all files from a directory."
+        )
+
+    # Check that file-mapping is only used with --files
+    if args.file_mapping and args.directory:
+        errors.append(
+            "--file-mapping can only be used with --files, not with --directory. "
+            "File mappings require explicit file specification."
+        )
+
+    # Check retry value is non-negative
+    if args.retry < 0:
+        errors.append(
+            f"--retry must be a non-negative integer, got {args.retry}."
+        )
+
+    # Report all errors
+    if errors:
+        for error in errors:
+            print(f"Error: {error}", file=sys.stderr)
+        print(
+            "\nUse 'glpkg upload --help' for usage information.",
+            file=sys.stderr,
+        )
+        sys.exit(3)  # ConfigurationError exit code
+
+
+def register_upload_command(subparsers: argparse._SubParsersAction) -> None:
+    """Register the upload subcommand with the main argument parser.
+
+    Args:
+        subparsers: Subparsers action from the main argument parser.
+    """
+    upload_parser = subparsers.add_parser(
+        "upload",
+        help="Upload files to GitLab's Generic Package Registry",
+        description=(
+            "Upload one or more files to a GitLab project's package registry.\n\n"
+            "Supports automatic project detection from Git remotes, duplicate handling,\n"
+            "file renaming, and retry logic for reliability."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+Examples:
+  # Upload a single file
+  glpkg upload --package-name myapp --package-version 1.0.0 --files dist/app.tar.gz
+
+  # Upload multiple files
+  glpkg upload --package-name myapp --package-version 1.0.0 --files file1.bin file2.bin
+
+  # Upload all files from a directory
+  glpkg upload --package-name myapp --package-version 1.0.0 --directory dist/
+
+  # With file renaming (source:target format)
+  glpkg upload --package-name myapp --package-version 1.0.0 \\
+      --files local.tar.gz --file-mapping local.tar.gz:app-1.0.0.tar.gz
+
+  # Skip duplicates (default behavior)
+  glpkg upload --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
+      --duplicate-policy skip
+
+  # Replace existing files
+  glpkg upload --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
+      --duplicate-policy replace
+
+  # Dry run with verbose output
+  glpkg --verbose upload --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
+      --dry-run
+
+  # Specify project explicitly
+  glpkg upload --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
+      --project-url https://gitlab.com/mygroup/myproject
+
+  # Use custom GitLab instance
+  glpkg upload --package-name myapp --package-version 1.0.0 --files dist/*.tar.gz \\
+      --project-path mygroup/myproject
+
+Environment variables:
+  GITLAB_TOKEN    GitLab API token (alternative to --token)
+""",
+    )
+
+    # Required arguments
+    required_group = upload_parser.add_argument_group("required arguments")
+    required_group.add_argument(
+        "--package-name",
+        type=str,
+        metavar="NAME",
+        help="Package name in the GitLab registry (e.g., 'myapp', 'my-library')",
+    )
+    required_group.add_argument(
+        "--package-version",
+        type=str,
+        metavar="VERSION",
+        help="Package version (e.g., '1.0.0', '2.3.1-beta')",
+    )
+
+    # File input arguments
+    file_input_group = upload_parser.add_argument_group(
+        "file input (one required)",
+        "Specify files to upload using either --files or --directory",
+    )
+    file_input_group.add_argument(
+        "--files",
+        nargs="+",
+        type=str,
+        metavar="FILE",
+        help="List of files to upload (e.g., --files file1.tar.gz file2.tar.gz)",
+    )
+    file_input_group.add_argument(
+        "--directory",
+        type=str,
+        metavar="DIR",
+        help="Directory containing files to upload (uploads all top-level files)",
+    )
+
+    # Project specification arguments
+    project_group = upload_parser.add_argument_group(
+        "project specification",
+        "Specify the target GitLab project (auto-detected from Git remote if not provided)",
+    )
+    project_group.add_argument(
+        "--project-url",
+        type=str,
+        metavar="URL",
+        help="Full GitLab project URL (e.g., 'https://gitlab.com/namespace/project')",
+    )
+    project_group.add_argument(
+        "--project-path",
+        type=str,
+        metavar="PATH",
+        help="Project path in namespace/project format (e.g., 'mygroup/myproject')",
+    )
+
+    # Duplicate handling
+    upload_parser.add_argument(
+        "--duplicate-policy",
+        type=str,
+        choices=["skip", "replace", "error"],
+        default="skip",
+        metavar="POLICY",
+        help=(
+            "How to handle duplicate files: "
+            "'skip' (default) - skip uploading, "
+            "'replace' - delete existing and upload new, "
+            "'error' - fail with error"
+        ),
+    )
+
+    # File mapping
+    upload_parser.add_argument(
+        "--file-mapping",
+        action="append",
+        type=str,
+        metavar="SOURCE:TARGET",
+        help=(
+            "Rename files during upload using source:target format. "
+            "Can be specified multiple times (e.g., --file-mapping local.bin:remote.bin). "
+            "Only valid with --files, not --directory."
+        ),
+    )
+
+    # Operational flags
+    operational_group = upload_parser.add_argument_group("operational options")
+    operational_group.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview actions without executing uploads (shows what would be done)",
+    )
+    operational_group.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="Stop immediately on first upload failure (default: continue with remaining files)",
+    )
+    operational_group.add_argument(
+        "--retry",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of retry attempts for failed uploads (default: 0)",
+    )
+
+    # Set the handler function
+    upload_parser.set_defaults(func=execute_upload)
+
+
+def execute_upload(args: argparse.Namespace) -> None:
+    """Execute the upload subcommand.
+
+    This is the main handler for the upload subcommand, orchestrating:
+    1. Flag validation
+    2. Project resolution (auto-detect or manual)
+    3. GitLab authentication
+    4. Context building
+    5. File collection
+    6. Upload execution
+    7. Result formatting
+
+    Args:
+        args: Parsed argument namespace from argparse.
+    """
+    # Validate upload-specific flags
+    validate_upload_flags(args)
+
+    # Convert duplicate_policy string to enum
+    args.duplicate_policy = DuplicatePolicy(args.duplicate_policy)
 
     # Project resolution
     try:
         if args.project_url or args.project_path:
-            # Manual specification (Flow 8)
+            # Manual specification
             gitlab_url, project_path = resolve_project_manually(
                 project_url=args.project_url,
                 project_path=args.project_path,
                 gitlab_url=args.gitlab_url,
             )
         else:
-            # Auto-detection (Flow 7)
+            # Auto-detection
             gitlab_url, project_path = auto_detect_project()
 
         # Authenticate with GitLab
@@ -1192,7 +946,7 @@ def main(argv: list[str] | None = None) -> None:
         # Log success
         logger.info(f"Successfully resolved project: {project_path} (ID: {project_id})")
 
-        # Phase 3 - Context building
+        # Context building
         builder = UploadContextBuilder()
         context = builder.build(
             args=args,
@@ -1235,7 +989,7 @@ def main(argv: list[str] | None = None) -> None:
         logger.error(f"Unexpected error during project resolution: {e}")
         sys.exit(1)
 
-    # Phase 4 - Upload orchestration
+    # Upload orchestration
     try:
         # Step 1: Collect files to upload
         files_to_upload, file_errors = collect_files(
@@ -1300,7 +1054,3 @@ def main(argv: list[str] | None = None) -> None:
     except Exception as e:
         logger.error(f"Unexpected error during upload: {e}")
         sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()

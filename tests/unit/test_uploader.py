@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, Mock, call, patch
 import pytest
 from gitlab.exceptions import GitlabError
 
-from gitlab_pkg_upload.models import (
+from glpkg.models import (
     ChecksumValidationError,
     DuplicatePolicy,
     RemoteFile,
@@ -23,7 +23,7 @@ from gitlab_pkg_upload.models import (
     UploadContext,
     UploadResult,
 )
-from gitlab_pkg_upload.uploader import (
+from glpkg.uploader import (
     delete_file_from_registry,
     handle_duplicate,
     is_transient_error,
@@ -591,7 +591,7 @@ class TestHandleDuplicate:
         mock_project.packages.list.return_value = []
 
         with patch(
-            "gitlab_pkg_upload.uploader.delete_file_from_registry"
+            "glpkg.uploader.delete_file_from_registry"
         ) as mock_delete:
             handle_duplicate(mock_upload_context, mock_file_path, sample_remote_file)
             mock_delete.assert_called_once_with(
@@ -801,7 +801,7 @@ class TestUploadFiles:
         mock_project.packages.get.return_value = mock_package_obj
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             results = upload_files(mock_upload_context, [(mock_file_path, "target.bin")])
 
@@ -830,10 +830,10 @@ class TestUploadFiles:
         mock_project.packages.get.return_value = mock_package_obj
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             with patch(
-                "gitlab_pkg_upload.uploader.validate_upload", return_value=True
+                "glpkg.uploader.validate_upload", return_value=True
             ):
                 results = upload_files(
                     mock_upload_context,
@@ -873,7 +873,7 @@ class TestUploadFiles:
         )
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             results = upload_files(
                 mock_upload_context, [(mock_file_path, "target.bin")]
@@ -907,7 +907,7 @@ class TestUploadFiles:
         mock_project.packages.get.return_value = mock_package_obj
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             results = upload_files(
                 mock_upload_context, [(mock_file_path, "target.bin")]
@@ -929,7 +929,7 @@ class TestUploadFiles:
         )
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             results = upload_files(
                 mock_upload_context, [(mock_file_path, "target.bin")]
@@ -955,7 +955,7 @@ class TestUploadFiles:
         mock_upload_context.gl.projects.get.side_effect = Exception("Upload failed")
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             results = upload_files(
                 mock_upload_context,
@@ -1000,7 +1000,7 @@ class TestUploadFiles:
         mock_project.packages.get.return_value = mock_package_obj
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             results = upload_files(
                 mock_upload_context,
@@ -1030,7 +1030,7 @@ class TestUploadFiles:
         mock_project.packages.get.return_value = mock_package_obj
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ) as mock_sha:
             upload_files(mock_upload_context, [(mock_file_path, "target.bin")])
             mock_sha.assert_called_once_with(mock_file_path)
@@ -1043,10 +1043,10 @@ class TestUploadFiles:
         mock_upload_context.gl.projects.get.return_value = mock_project
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             with patch(
-                "gitlab_pkg_upload.uploader.validate_upload", return_value=True
+                "glpkg.uploader.validate_upload", return_value=True
             ) as mock_validate:
                 upload_files(mock_upload_context, [(mock_file_path, "target.bin")])
                 mock_validate.assert_called_once()
@@ -1059,10 +1059,10 @@ class TestUploadFiles:
         mock_upload_context.gl.projects.get.return_value = mock_project
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             with patch(
-                "gitlab_pkg_upload.uploader.validate_upload", return_value=True
+                "glpkg.uploader.validate_upload", return_value=True
             ):
                 upload_files(mock_upload_context, [(mock_file_path, "target.bin")])
 
@@ -1076,7 +1076,7 @@ class TestUploadFiles:
         mock_upload_context.gl.projects.get.side_effect = Exception("Network error")
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             results = upload_files(
                 mock_upload_context, [(mock_file_path, "target.bin")]
@@ -1108,10 +1108,10 @@ class TestUploadFiles:
         mock_project.packages.get.return_value = mock_package_obj
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             with patch(
-                "gitlab_pkg_upload.uploader.delete_file_from_registry", return_value=1
+                "glpkg.uploader.delete_file_from_registry", return_value=1
             ) as mock_delete:
                 upload_files(mock_upload_context, [(mock_file_path, "target.bin")])
                 mock_delete.assert_called()
@@ -1127,7 +1127,7 @@ class TestUploadFiles:
         )
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             results = upload_files(
                 mock_upload_context, [(mock_file_path, "target.bin")]
@@ -1181,10 +1181,10 @@ class TestUploadFilesIntegration:
         mock_project.packages.get.return_value = mock_package_obj
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             with patch(
-                "gitlab_pkg_upload.uploader.validate_upload", return_value=True
+                "glpkg.uploader.validate_upload", return_value=True
             ):
                 results = upload_files(mock_upload_context, files)
 
@@ -1232,10 +1232,10 @@ class TestUploadFilesIntegration:
         mock_project.packages.get.return_value = mock_package_obj
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             with patch(
-                "gitlab_pkg_upload.uploader.upload_single_file",
+                "glpkg.uploader.upload_single_file",
                 side_effect=mock_upload_side_effect,
             ):
                 results = upload_files(
@@ -1266,7 +1266,7 @@ class TestUploadFilesIntegration:
         )
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             results = upload_files(mock_upload_context, files)
 
@@ -1307,7 +1307,7 @@ class TestUploadFilesIntegration:
         mock_project.packages.get.return_value = mock_package_obj
 
         with patch(
-            "gitlab_pkg_upload.uploader.calculate_sha256", return_value="a" * 64
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
         ):
             results = upload_files(
                 mock_upload_context,

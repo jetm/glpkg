@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from gitlab_pkg_upload.validators import calculate_sha256
+from glpkg.validators import calculate_sha256
 
 
 @dataclass

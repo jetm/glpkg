@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     pass
 
 # Import the main function from CLI module
-from gitlab_pkg_upload.cli import main
+from glpkg.cli.main import main
 
 
 @dataclass
@@ -73,7 +73,7 @@ class UploadResult:
 
 class ModuleExecutor:
     """
-    Handles execution of the gitlab-pkg-upload CLI via direct module invocation.
+    Handles execution of the glpkg CLI via direct module invocation.
 
     This class calls the main() function from the CLI module directly instead
     of spawning a subprocess. It captures stdout/stderr via context managers
@@ -284,7 +284,8 @@ class ModuleExecutor:
         if not files and not directory:
             raise ValueError("Either files or directory must be provided")
 
-        argv = []
+        # Start with the upload subcommand
+        argv = ["upload"]
 
         # Required arguments
         argv.extend(["--package-name", package_name])

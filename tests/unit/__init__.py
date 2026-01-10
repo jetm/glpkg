@@ -1,1 +1,1 @@
-# Unit tests for gitlab-pkg-upload
+# Unit tests for glpkg

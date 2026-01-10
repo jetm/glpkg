@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
-from gitlab_pkg_upload.models import ConfigurationError, FileValidationError, ProjectResolutionError
+from glpkg.models import ConfigurationError, FileValidationError, ProjectResolutionError
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -655,7 +655,7 @@ def validate_dependencies() -> None:
             "   • Set local version: pyenv local 3.11\n\n"
             "3. Use uv to run with correct Python version:\n"
             "   • Install uv: pip install uv\n"
-            "   • Run command: uv run --python 3.11 gitlab-pkg-upload\n\n"
+            "   • Run command: uv run --python 3.11 glpkg\n\n"
             "For more help, see: https://docs.python.org/3/installing/"
         )
 
@@ -684,8 +684,8 @@ def validate_dependencies() -> None:
             "\nSOLUTION:\n"
             "1. If using uv (recommended):\n"
             "   • Install package: uv pip install -e .\n"
-            "   • Run command: gitlab-pkg-upload\n"
-            "   • Or run directly: uv run gitlab-pkg-upload\n\n"
+            "   • Run command: glpkg\n"
+            "   • Or run directly: uv run glpkg\n\n"
             "2. Manual installation with pip:\n"
         )
 

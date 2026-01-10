@@ -45,7 +45,7 @@ from typing import Tuple
 
 import pytest
 
-from gitlab_pkg_upload.cli import GitAutoDetector, ProjectResolutionError
+from glpkg.cli.upload import GitAutoDetector, ProjectResolutionError
 
 
 def _validate_gitlab_repository() -> Tuple[bool, str, str]:

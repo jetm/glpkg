@@ -25,7 +25,7 @@ except ImportError:
 
 # Import exception models from the new modular structure
 try:
-    from gitlab_pkg_upload.models import (
+    from glpkg.models import (
         AuthenticationError,
         GitLabUploadError,
         NetworkError,
@@ -34,7 +34,7 @@ try:
 
     EXCEPTION_MODELS_AVAILABLE = True
 except ImportError:
-    # Fall back to basic exceptions when gitlab_pkg_upload is not available
+    # Fall back to basic exceptions when glpkg is not available
     EXCEPTION_MODELS_AVAILABLE = False
     GitLabUploadError = Exception
     AuthenticationError = Exception

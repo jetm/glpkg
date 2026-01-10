@@ -15,12 +15,12 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from gitlab_pkg_upload.duplicate_detector import (
+from glpkg.duplicate_detector import (
     DuplicateDetector,
     calculate_sha256,
     handle_network_error_with_retry,
 )
-from gitlab_pkg_upload.models import FileFingerprint, RemoteFile
+from glpkg.models import FileFingerprint, RemoteFile
 
 # Mark these as fast unit tests
 pytestmark = [pytest.mark.unit, pytest.mark.fast]
@@ -395,7 +395,7 @@ class TestCheckSessionDuplicate:
         detector.register_file(file1, "target.txt", checksum)
 
         with patch(
-            "gitlab_pkg_upload.duplicate_detector.calculate_sha256",
+            "glpkg.duplicate_detector.calculate_sha256",
             return_value=checksum,
         ) as mock_calc:
             detector.check_session_duplicate(file2, "target.txt")
@@ -818,7 +818,7 @@ class TestRegisterFile:
 
         mock_time = 1704067200.0  # Fixed timestamp
 
-        with patch("gitlab_pkg_upload.duplicate_detector.time.time", return_value=mock_time):
+        with patch("glpkg.duplicate_detector.time.time", return_value=mock_time):
             detector.register_file(test_file, "target.txt", "a" * 64)
 
         fingerprint = detector.session_registry["target.txt"]

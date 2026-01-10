@@ -1,4 +1,4 @@
-# GitLab Package Upload
+# glpkg
 
 A CLI tool for uploading files to GitLab's Generic Package Registry.
 
@@ -11,7 +11,7 @@ A CLI tool for uploading files to GitLab's Generic Package Registry.
 uv pip install -e .
 
 # Or run directly without installing
-uv run gitlab-pkg-upload --help
+uv run glpkg --help
 ```
 
 ### Using pip
@@ -24,21 +24,27 @@ pip install -e .
 
 ```bash
 # Upload a single file
-gitlab-pkg-upload file.tar.gz --package-name my-package --version 1.0.0
+glpkg upload --package-name my-package --package-version 1.0.0 --files file.tar.gz
 
 # Upload multiple files
-gitlab-pkg-upload file1.tar.gz file2.zip --package-name my-package --version 1.0.0
+glpkg upload --package-name my-package --package-version 1.0.0 --files file1.tar.gz file2.zip
 
 # Upload with automatic project detection from git remote
-gitlab-pkg-upload file.tar.gz --package-name my-package --version 1.0.0
+glpkg upload --package-name my-package --package-version 1.0.0 --files file.tar.gz
 
 # Specify project explicitly
-gitlab-pkg-upload file.tar.gz --package-name my-package --version 1.0.0 \
-    --project-path namespace/project
+glpkg upload --package-name my-package --package-version 1.0.0 \
+    --project-path namespace/project --files file.tar.gz
 
 # Handle duplicates (skip, replace, or error)
-gitlab-pkg-upload file.tar.gz --package-name my-package --version 1.0.0 \
-    --duplicate-policy replace
+glpkg upload --package-name my-package --package-version 1.0.0 \
+    --duplicate-policy replace --files file.tar.gz
+
+# Verbose output with global flags
+glpkg --verbose upload --package-name my-package --package-version 1.0.0 --files file.tar.gz
+
+# JSON output for CI/CD pipelines
+glpkg --json-output upload --package-name my-package --package-version 1.0.0 --files file.tar.gz
 ```
 
 ## Configuration
@@ -63,8 +69,8 @@ Your GitLab token requires:
 
 ```bash
 # Clone the repository
-git clone https://gitlab.com/your-namespace/gitlab-pkg-upload.git
-cd gitlab-pkg-upload
+git clone https://gitlab.com/your-namespace/glpkg.git
+cd glpkg
 
 # Install with development dependencies
 uv sync --all-extras
@@ -161,7 +167,7 @@ uv run bump-my-version bump major
 ```
 
 Running `bump-my-version bump` automatically:
-- Updates the version in `pyproject.toml` and `src/gitlab_pkg_upload/__init__.py`
+- Updates the version in `pyproject.toml` and `src/glpkg/__init__.py`
 - Creates a git commit with the version change
 - Creates a git tag (format: `v1.2.3`)
 
@@ -174,7 +180,7 @@ uv run bump-my-version bump patch
 # 2. Push changes and tags
 git push && git push --tags
 
-# 3. Create GitHub release at https://github.com/your-org/gitlab-pkg-upload/releases/new
+# 3. Create GitHub release at https://github.com/your-org/glpkg/releases/new
 # 4. PyPI publication happens automatically via GitHub Actions
 ```
 
@@ -191,7 +197,7 @@ Publishing a GitHub release automatically triggers the `.github/workflows/publis
 
 ```bash
 # Check that version numbers match in both files
-grep -r "0.1.0" pyproject.toml src/gitlab_pkg_upload/__init__.py
+grep -r "0.1.0" pyproject.toml src/glpkg/__init__.py
 
 # Test bump-my-version dry run
 uv run bump-my-version bump patch --dry-run --verbose
@@ -203,20 +209,25 @@ git tag -l
 ## Project Structure
 
 ```
-gitlab-pkg-upload/
+glpkg/
 ├── src/
-│   └── gitlab_pkg_upload/
+│   └── glpkg/
 │       ├── __init__.py
-│       ├── cli.py          # Command-line interface
-│       ├── models.py       # Data models
-│       ├── uploader.py     # Upload logic
-│       └── validators.py   # Input validation
+│       ├── cli/
+│       │   ├── __init__.py
+│       │   ├── main.py         # Main CLI entry point with subcommand routing
+│       │   └── upload.py       # Upload subcommand implementation
+│       ├── models.py           # Data models
+│       ├── uploader.py         # Upload logic
+│       ├── formatters.py       # Output formatting
+│       ├── duplicate_detector.py  # Duplicate detection
+│       └── validators.py       # Input validation
 ├── tests/
-│   ├── unit/               # Unit tests
-│   ├── integration/        # Integration tests
-│   └── utils/              # Test utilities
-├── pyproject.toml          # Project configuration
-└── README.md               # This file
+│   ├── unit/                   # Unit tests
+│   ├── integration/            # Integration tests
+│   └── utils/                  # Test utilities
+├── pyproject.toml              # Project configuration
+└── README.md                   # This file
 ```
 
 ## License

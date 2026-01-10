@@ -1,6 +1,6 @@
 # GitLab Package Upload Test Suite
 
-This directory contains a comprehensive pytest-based test suite for the GitLab package upload functionality. The test suite validates the `gitlab-pkg-upload` command through both unit tests and end-to-end integration testing.
+This directory contains a comprehensive pytest-based test suite for the GitLab package upload functionality. The test suite validates the `glpkg` command through both unit tests and end-to-end integration testing.
 
 ## Overview
 
@@ -11,7 +11,7 @@ The test suite is organized into two categories:
 
 ## Quick Start
 
-All test dependencies are automatically managed by uv. However, the `gitlab_pkg_upload` package must be installed in development mode before running tests.
+All test dependencies are automatically managed by uv. However, the `glpkg` package must be installed in development mode before running tests.
 
 ```bash
 # Install the package in development mode (required before running tests)
@@ -98,7 +98,7 @@ All test dependencies are automatically installed by uv when running `uv run pyt
 - pytest-sugar (progress visualization)
 - pytest-instafail (instant failure reporting)
 
-**Important**: The `gitlab_pkg_upload` package itself must be installed in development mode before running tests:
+**Important**: The `glpkg` package itself must be installed in development mode before running tests:
 
 ```bash
 uv pip install -e .

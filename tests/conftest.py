@@ -22,12 +22,12 @@ import requests
 try:
     from gitlab import Gitlab
 
-    from gitlab_pkg_upload.cli import GitAutoDetector, ProjectResolver
-    from gitlab_pkg_upload.models import GitRemoteInfo, ProjectInfo
+    from glpkg.cli.upload import GitAutoDetector, ProjectResolver
+    from glpkg.models import GitRemoteInfo, ProjectInfo
 
     GITLAB_AVAILABLE = True
 except ImportError:
-    # Handle case where python-gitlab or gitlab_pkg_upload is not available
+    # Handle case where python-gitlab or glpkg is not available
     Gitlab = None
     ProjectResolver = None
     GitAutoDetector = None

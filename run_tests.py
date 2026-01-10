@@ -76,20 +76,20 @@ def format_duration(seconds: float) -> str:
 
 def ensure_package_installed() -> bool:
     """
-    Ensure the gitlab_pkg_upload package is installed in development mode.
+    Ensure the glpkg package is installed in development mode.
 
     Returns:
         True if package is available (already installed or successfully installed),
         False if installation failed.
     """
     try:
-        import gitlab_pkg_upload  # noqa: F401
+        import glpkg  # noqa: F401
 
         return True
     except ImportError:
         pass
 
-    print("Installing gitlab_pkg_upload package in development mode...")
+    print("Installing glpkg package in development mode...")
     try:
         result = subprocess.run(
             ["uv", "pip", "install", "-e", "."],
@@ -205,7 +205,7 @@ def main():
 
     # Ensure the package is installed before running tests
     if not ensure_package_installed():
-        print("\nFailed to install the gitlab_pkg_upload package.")
+        print("\nFailed to install the glpkg package.")
         print("Please install it manually with: uv pip install -e .")
         return 1
 

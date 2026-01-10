@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Optional
 if TYPE_CHECKING:
     from gitlab import Gitlab
 
-    from gitlab_pkg_upload.duplicate_detector import DuplicateDetector
+    from glpkg.duplicate_detector import DuplicateDetector
 
 
 # Enums

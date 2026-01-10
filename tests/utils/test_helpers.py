@@ -28,8 +28,8 @@ if _src_path.exists() and str(_src_path) not in sys.path:
 
 # Import from the new modular structure
 try:
-    from gitlab_pkg_upload.cli import main as cli_main
-    from gitlab_pkg_upload.models import (
+    from glpkg.cli.main import main as cli_main
+    from glpkg.models import (
         AuthenticationError,
         ConfigurationError,
         DuplicatePolicy,
@@ -130,7 +130,7 @@ class UploadResult:
 
 class ScriptExecutor:
     """
-    Handles execution of the gitlab-pkg-upload CLI.
+    Handles execution of the glpkg CLI.
 
     Extracted from the monolithic test file's UploadScriptInterface class.
     This class manages execution of the upload CLI via direct module invocation
@@ -146,14 +146,14 @@ class ScriptExecutor:
 
         Args:
             script_path: Deprecated parameter, kept for backward compatibility.
-                        Direct module invocation is always used via gitlab_pkg_upload.cli.
+                        Direct module invocation is always used via glpkg.cli.
         """
         self.script_path = script_path
         self._use_direct_invocation = CLI_AVAILABLE
 
         if not self._use_direct_invocation:
             raise ImportError(
-                "gitlab_pkg_upload module is not available. "
+                "glpkg module is not available. "
                 "Install the package with: uv pip install -e ."
             )
 
@@ -470,7 +470,7 @@ class ScriptExecutor:
 
         # Use program name for direct invocation, script path for subprocess fallback
         if self._use_direct_invocation:
-            command = ["gitlab-pkg-upload"]
+            command = ["glpkg", "upload"]
         else:
             command = [str(self.script_path)]
 

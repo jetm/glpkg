@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from gitlab_pkg_upload.models import (
+from glpkg.models import (
     # Dataclasses
     FileFingerprint,
     GitRemoteInfo,

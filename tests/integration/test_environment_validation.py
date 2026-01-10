@@ -16,7 +16,7 @@ import os
 
 import pytest
 
-from gitlab_pkg_upload.cli import GitAutoDetector
+from glpkg.cli.upload import GitAutoDetector
 
 # Test markers for categorization
 pytestmark = [

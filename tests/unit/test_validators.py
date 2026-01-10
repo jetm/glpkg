@@ -17,12 +17,12 @@ from unittest.mock import MagicMock, Mock, mock_open, patch
 
 import pytest
 
-from gitlab_pkg_upload.models import (
+from glpkg.models import (
     ConfigurationError,
     FileValidationError,
     ProjectResolutionError,
 )
-from gitlab_pkg_upload.validators import (
+from glpkg.validators import (
     DEFAULT_GITLAB_URL,
     calculate_sha256,
     collect_files,
@@ -1013,8 +1013,8 @@ class TestConfigurationValidation:
         """Test successful configuration validation."""
         monkeypatch.setenv("GITLAB_TOKEN", "x" * 26)
 
-        with patch("gitlab_pkg_upload.validators.validate_dependencies"):
-            with patch("gitlab_pkg_upload.validators.validate_git_installation"):
+        with patch("glpkg.validators.validate_dependencies"):
+            with patch("glpkg.validators.validate_git_installation"):
                 # Should not raise
                 validate_configuration(token="x" * 26, require_git=False)
 
@@ -1023,9 +1023,9 @@ class TestConfigurationValidation:
         """Test validation with Git requirement."""
         monkeypatch.setenv("GITLAB_TOKEN", "x" * 26)
 
-        with patch("gitlab_pkg_upload.validators.validate_dependencies"):
-            with patch("gitlab_pkg_upload.validators.validate_git_installation"):
-                with patch("gitlab_pkg_upload.validators.validate_git_repository"):
+        with patch("glpkg.validators.validate_dependencies"):
+            with patch("glpkg.validators.validate_git_installation"):
+                with patch("glpkg.validators.validate_git_repository"):
                     # Should not raise
                     validate_configuration(
                         token="x" * 26,
@@ -1036,7 +1036,7 @@ class TestConfigurationValidation:
     def test_dependencies_failure_propagates(self):
         """Test dependencies validation failure propagates."""
         with patch(
-            "gitlab_pkg_upload.validators.validate_dependencies",
+            "glpkg.validators.validate_dependencies",
             side_effect=ConfigurationError("Missing dependency"),
         ):
             with pytest.raises(ConfigurationError) as exc_info:
@@ -1046,7 +1046,7 @@ class TestConfigurationValidation:
     @pytest.mark.timeout(60)
     def test_token_validation_failure_propagates(self):
         """Test token validation failure propagates."""
-        with patch("gitlab_pkg_upload.validators.validate_dependencies"):
+        with patch("glpkg.validators.validate_dependencies"):
             with pytest.raises(ConfigurationError):
                 validate_configuration(token="short")
 
@@ -1055,9 +1055,9 @@ class TestConfigurationValidation:
         """Test Git validation failure is ignored when not required."""
         monkeypatch.setenv("GITLAB_TOKEN", "x" * 26)
 
-        with patch("gitlab_pkg_upload.validators.validate_dependencies"):
+        with patch("glpkg.validators.validate_dependencies"):
             with patch(
-                "gitlab_pkg_upload.validators.validate_git_installation",
+                "glpkg.validators.validate_git_installation",
                 side_effect=ConfigurationError("Git not found"),
             ):
                 # Should not raise - Git is not required
@@ -1071,9 +1071,9 @@ class TestConfigurationValidation:
         """Test Git validation failure propagates when required."""
         monkeypatch.setenv("GITLAB_TOKEN", "x" * 26)
 
-        with patch("gitlab_pkg_upload.validators.validate_dependencies"):
+        with patch("glpkg.validators.validate_dependencies"):
             with patch(
-                "gitlab_pkg_upload.validators.validate_git_installation",
+                "glpkg.validators.validate_git_installation",
                 side_effect=ConfigurationError("Git not found"),
             ):
                 with pytest.raises(ConfigurationError) as exc_info:
@@ -1088,7 +1088,7 @@ class TestConfigurationValidation:
         """Test token is retrieved from environment when not provided."""
         monkeypatch.setenv("GITLAB_TOKEN", "x" * 26)
 
-        with patch("gitlab_pkg_upload.validators.validate_dependencies"):
-            with patch("gitlab_pkg_upload.validators.validate_git_installation"):
+        with patch("glpkg.validators.validate_dependencies"):
+            with patch("glpkg.validators.validate_git_installation"):
                 # Should not raise - token from environment
                 validate_configuration(token=None, require_git=False)

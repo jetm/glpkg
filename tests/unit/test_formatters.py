@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from src.gitlab_pkg_upload.formatters import (
+from glpkg.formatters import (
     OutputFormatter,
     detect_color_support,
     detect_tty,
@@ -31,7 +31,7 @@ from src.gitlab_pkg_upload.formatters import (
     format_error,
     get_formatter,
 )
-from src.gitlab_pkg_upload.models import (
+from glpkg.models import (
     DuplicatePolicy,
     GitLabUploadError,
     UploadConfig,
@@ -106,7 +106,7 @@ class MockStatus:
 def mock_rich_console():
     """Fixture that patches rich.console.Console with MockConsole."""
     with patch("rich.console.Console", MockConsole):
-        with patch("src.gitlab_pkg_upload.formatters.Console", MockConsole):
+        with patch("glpkg.formatters.Console", MockConsole):
             yield MockConsole
 
 
@@ -114,7 +114,7 @@ def mock_rich_console():
 def mock_rich_status():
     """Fixture that patches rich.status.Status with MockStatus."""
     with patch("rich.status.Status", MockStatus):
-        with patch("src.gitlab_pkg_upload.formatters.Status", MockStatus):
+        with patch("glpkg.formatters.Status", MockStatus):
             yield MockStatus
 
 
@@ -336,7 +336,7 @@ class TestTerminalDetection:
         """Test detect_color_support returns False when NO_COLOR is set."""
         os.environ["NO_COLOR"] = "1"
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             assert detect_color_support() is False
 
     @pytest.mark.timeout(60)
@@ -344,7 +344,7 @@ class TestTerminalDetection:
         """Test detect_color_support returns True when FORCE_COLOR is set."""
         os.environ["FORCE_COLOR"] = "1"
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             assert detect_color_support() is True
 
     @pytest.mark.timeout(60)
@@ -352,7 +352,7 @@ class TestTerminalDetection:
         """Test detect_color_support returns True when COLORTERM is set."""
         os.environ["COLORTERM"] = "truecolor"
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             assert detect_color_support() is True
 
     @pytest.mark.timeout(60)
@@ -360,13 +360,13 @@ class TestTerminalDetection:
         """Test detect_color_support returns True when TERM contains color."""
         os.environ["TERM"] = "xterm-256color"
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             assert detect_color_support() is True
 
     @pytest.mark.timeout(60)
     def test_detect_color_support_without_tty(self, clean_env):
         """Test detect_color_support returns False when not in a TTY."""
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=False):
+        with patch("glpkg.formatters.detect_tty", return_value=False):
             assert detect_color_support() is False
 
     @pytest.mark.timeout(60)
@@ -374,7 +374,7 @@ class TestTerminalDetection:
         """Test detect_color_support returns True on Windows with WT_SESSION."""
         os.environ["WT_SESSION"] = "some-session-id"
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             with patch.object(sys, "platform", "win32"):
                 assert detect_color_support() is True
 
@@ -383,7 +383,7 @@ class TestTerminalDetection:
         """Test detect_color_support returns True on Windows with ANSICON."""
         os.environ["ANSICON"] = "1"
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             with patch.object(sys, "platform", "win32"):
                 assert detect_color_support() is True
 
@@ -393,7 +393,7 @@ class TestTerminalDetection:
         os.environ["NO_COLOR"] = "1"
         os.environ["FORCE_COLOR"] = "1"
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             assert detect_color_support() is False
 
     @pytest.mark.timeout(60)
@@ -431,7 +431,7 @@ class TestTerminalDetection:
     @pytest.mark.timeout(60)
     def test_detect_unicode_support_without_tty(self, clean_env):
         """Test detect_unicode_support returns False when not in a TTY."""
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=False):
+        with patch("glpkg.formatters.detect_tty", return_value=False):
             assert detect_unicode_support() is False
 
     @pytest.mark.timeout(60)
@@ -463,9 +463,9 @@ class TestOutputFormatterInit:
         """Test OutputFormatter detects terminal capabilities when plain_output=False."""
         config = create_upload_config(plain_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
-            with patch("src.gitlab_pkg_upload.formatters.detect_color_support", return_value=True):
-                with patch("src.gitlab_pkg_upload.formatters.detect_unicode_support", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
+            with patch("glpkg.formatters.detect_color_support", return_value=True):
+                with patch("glpkg.formatters.detect_unicode_support", return_value=True):
                     formatter = OutputFormatter(config)
 
                     assert formatter.is_tty is True
@@ -487,7 +487,7 @@ class TestOutputFormatterInit:
         """Test OutputFormatter initializes correctly with json_output=True."""
         config = create_upload_config(json_output=True)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             formatter = OutputFormatter(config)
 
             assert formatter.config.json_output is True
@@ -509,9 +509,9 @@ class TestRichOutputFormatting:
         """Test rich output displays successful uploads correctly."""
         config = create_upload_config(plain_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
-            with patch("src.gitlab_pkg_upload.formatters.detect_color_support", return_value=True):
-                with patch("src.gitlab_pkg_upload.formatters.detect_unicode_support", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
+            with patch("glpkg.formatters.detect_color_support", return_value=True):
+                with patch("glpkg.formatters.detect_unicode_support", return_value=True):
                     formatter = OutputFormatter(config)
 
         results = [
@@ -538,7 +538,7 @@ class TestRichOutputFormatting:
         """Test rich output displays skipped duplicates correctly."""
         config = create_upload_config(plain_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             formatter = OutputFormatter(config)
 
         results = [
@@ -566,7 +566,7 @@ class TestRichOutputFormatting:
         """Test rich output displays failed uploads correctly."""
         config = create_upload_config(plain_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             formatter = OutputFormatter(config)
 
         results = [
@@ -592,7 +592,7 @@ class TestRichOutputFormatting:
         """Test rich output displays replaced duplicates correctly."""
         config = create_upload_config(plain_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             formatter = OutputFormatter(config)
 
         results = [
@@ -621,7 +621,7 @@ class TestRichOutputFormatting:
         """Test rich output displays statistics correctly."""
         config = create_upload_config(plain_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             formatter = OutputFormatter(config)
 
         captured = io.StringIO()
@@ -642,7 +642,7 @@ class TestRichOutputFormatting:
         """Test rich output handles empty results list."""
         config = create_upload_config(plain_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             formatter = OutputFormatter(config)
 
         captured = io.StringIO()
@@ -662,7 +662,7 @@ class TestRichOutputFormatting:
         """Test rich output shows success message when all uploads succeed."""
         config = create_upload_config(plain_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             formatter = OutputFormatter(config)
 
         results = [
@@ -1143,7 +1143,7 @@ class TestErrorFormatting:
             "gitlab_url": "https://gitlab.com",
         }
 
-        with patch("src.gitlab_pkg_upload.formatters.enhance_error_message") as mock_enhance:
+        with patch("glpkg.formatters.enhance_error_message") as mock_enhance:
             mock_enhance.return_value = "Enhanced error message"
             result = format_error(error, context)
 
@@ -1172,7 +1172,7 @@ class TestProgressDisplay:
         """Test create_progress_spinner returns a Status-like object."""
         config = create_upload_config()
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             formatter = OutputFormatter(config)
 
         spinner = formatter.create_progress_spinner("Loading...")
@@ -1186,7 +1186,7 @@ class TestProgressDisplay:
         """Test create_progress_spinner accepts custom message."""
         config = create_upload_config()
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             formatter = OutputFormatter(config)
 
         message = "Uploading files..."
@@ -1210,7 +1210,7 @@ class TestProgressDisplay:
         """Test spinner creation when is_tty is False."""
         config = create_upload_config(plain_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=False):
+        with patch("glpkg.formatters.detect_tty", return_value=False):
             formatter = OutputFormatter(config)
 
         spinner = formatter.create_progress_spinner("Loading...")
@@ -1234,7 +1234,7 @@ class TestProgressDisplay:
         """Test standalone display_progress function delegates to formatter."""
         config = create_upload_config()
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             formatter = OutputFormatter(config)
 
         spinner = display_progress(formatter, "Processing...")
@@ -1285,7 +1285,7 @@ class TestOutputFormatSelection:
         """Test format_output calls plain formatter when not in TTY."""
         config = create_upload_config(plain_output=False, json_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=False):
+        with patch("glpkg.formatters.detect_tty", return_value=False):
             formatter = OutputFormatter(config)
 
         results = [create_upload_result()]
@@ -1304,8 +1304,8 @@ class TestOutputFormatSelection:
         """Test format_output calls rich formatter when in TTY."""
         config = create_upload_config(plain_output=False, json_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
-            with patch("src.gitlab_pkg_upload.formatters.detect_color_support", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
+            with patch("glpkg.formatters.detect_color_support", return_value=True):
                 formatter = OutputFormatter(config)
 
         results = [create_upload_result()]
@@ -1343,8 +1343,8 @@ class TestOutputFormatterIntegration:
         """Test complete rich output workflow."""
         config = create_upload_config(plain_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
-            with patch("src.gitlab_pkg_upload.formatters.detect_color_support", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
+            with patch("glpkg.formatters.detect_color_support", return_value=True):
                 formatter = OutputFormatter(config)
 
         captured = io.StringIO()
@@ -1595,7 +1595,7 @@ class TestEdgeCases:
         """Test that console output doesn't interfere with stdout capture."""
         config = create_upload_config(plain_output=False)
 
-        with patch("src.gitlab_pkg_upload.formatters.detect_tty", return_value=True):
+        with patch("glpkg.formatters.detect_tty", return_value=True):
             formatter = OutputFormatter(config)
 
         # Redirect console to a separate buffer using MockConsole

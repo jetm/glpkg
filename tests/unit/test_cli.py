@@ -43,25 +43,26 @@ import git
 from gitlab import Gitlab
 from gitlab.exceptions import GitlabAuthenticationError, GitlabGetError
 
-from gitlab_pkg_upload.cli import (
+from glpkg.cli.upload import (
     # Constants
     EXCEPTION_EXIT_CODE_MAP,
     # Functions
-    determine_verbosity,
-    setup_logging,
-    create_argument_parser,
-    validate_flags,
-    get_version,
-    parse_arguments,
     auto_detect_project,
     resolve_project_manually,
-    main,
+    validate_upload_flags,
     # Classes
     GitAutoDetector,
     ProjectResolver,
     UploadContextBuilder,
 )
-from gitlab_pkg_upload.models import (
+from glpkg.cli.main import (
+    main,
+    create_argument_parser,
+    determine_verbosity,
+    get_version,
+    setup_logging,
+)
+from glpkg.models import (
     DuplicatePolicy,
     GitRemoteInfo,
     ProjectInfo,
@@ -182,9 +183,9 @@ class TestSetupLogging:
     """Tests for setup_logging function."""
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.logging.basicConfig')
-    @patch('gitlab_pkg_upload.cli.RichHandler')
-    @patch('gitlab_pkg_upload.cli.Console')
+    @patch('glpkg.cli.main.logging.basicConfig')
+    @patch('glpkg.cli.main.RichHandler')
+    @patch('glpkg.cli.main.Console')
     def test_logging_setup_normal(self, mock_console, mock_rich_handler, mock_basic_config, mock_args):
         """Test logging setup with normal verbosity."""
         setup_logging(mock_args)
@@ -193,9 +194,9 @@ class TestSetupLogging:
         assert call_kwargs['level'] == logging.INFO
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.logging.basicConfig')
-    @patch('gitlab_pkg_upload.cli.RichHandler')
-    @patch('gitlab_pkg_upload.cli.Console')
+    @patch('glpkg.cli.main.logging.basicConfig')
+    @patch('glpkg.cli.main.RichHandler')
+    @patch('glpkg.cli.main.Console')
     def test_logging_setup_debug(self, mock_console, mock_rich_handler, mock_basic_config, mock_args):
         """Test logging setup with debug verbosity."""
         mock_args.debug = True
@@ -204,9 +205,9 @@ class TestSetupLogging:
         assert call_kwargs['level'] == logging.DEBUG
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.logging.basicConfig')
-    @patch('gitlab_pkg_upload.cli.RichHandler')
-    @patch('gitlab_pkg_upload.cli.Console')
+    @patch('glpkg.cli.main.logging.basicConfig')
+    @patch('glpkg.cli.main.RichHandler')
+    @patch('glpkg.cli.main.Console')
     def test_logging_setup_quiet(self, mock_console, mock_rich_handler, mock_basic_config, mock_args):
         """Test logging setup with quiet verbosity."""
         mock_args.quiet = True
@@ -215,9 +216,9 @@ class TestSetupLogging:
         assert call_kwargs['level'] == logging.WARNING
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.logging.basicConfig')
-    @patch('gitlab_pkg_upload.cli.RichHandler')
-    @patch('gitlab_pkg_upload.cli.Console')
+    @patch('glpkg.cli.main.logging.basicConfig')
+    @patch('glpkg.cli.main.RichHandler')
+    @patch('glpkg.cli.main.Console')
     def test_logging_setup_verbose(self, mock_console, mock_rich_handler, mock_basic_config, mock_args):
         """Test logging setup with verbose verbosity."""
         mock_args.verbose = True
@@ -226,9 +227,9 @@ class TestSetupLogging:
         assert call_kwargs['level'] == logging.INFO
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.logging.basicConfig')
-    @patch('gitlab_pkg_upload.cli.RichHandler')
-    @patch('gitlab_pkg_upload.cli.Console')
+    @patch('glpkg.cli.main.logging.basicConfig')
+    @patch('glpkg.cli.main.RichHandler')
+    @patch('glpkg.cli.main.Console')
     def test_logging_uses_stderr_for_json_output(self, mock_console, mock_rich_handler, mock_basic_config, mock_args):
         """Test logging uses stderr when json_output is enabled."""
         mock_args.json_output = True
@@ -246,29 +247,33 @@ class TestCreateArgumentParser:
         """Test argument parser is created successfully."""
         parser = create_argument_parser()
         assert isinstance(parser, argparse.ArgumentParser)
-        assert parser.prog == "gitlab-pkg-upload"
+        assert parser.prog == "glpkg"
 
     @pytest.mark.timeout(60)
-    def test_parser_has_required_argument_groups(self):
-        """Test parser has expected argument groups and options."""
+    def test_parser_has_global_options(self):
+        """Test parser has expected global options."""
         parser = create_argument_parser()
-        # Parse with no args - parser itself won't fail, but validate_flags will
+        # Parse with no args - shows help and has command=None
         args = parser.parse_args([])
-        # Verify that required argument attributes exist (even if None)
-        assert hasattr(args, 'package_name')
-        assert hasattr(args, 'package_version')
-        assert hasattr(args, 'files')
-        assert hasattr(args, 'directory')
+        # Verify that global argument attributes exist
+        assert hasattr(args, 'verbose')
+        assert hasattr(args, 'quiet')
+        assert hasattr(args, 'debug')
+        assert hasattr(args, 'json_output')
+        assert hasattr(args, 'command')
+        assert args.command is None  # No subcommand provided
 
     @pytest.mark.timeout(60)
-    def test_parser_accepts_valid_arguments(self):
-        """Test parser accepts valid argument combinations."""
+    def test_parser_accepts_upload_subcommand(self):
+        """Test parser accepts upload subcommand with valid arguments."""
         parser = create_argument_parser()
         args = parser.parse_args([
+            'upload',
             '--package-name', 'test',
             '--package-version', '1.0.0',
             '--files', 'file.txt'
         ])
+        assert args.command == 'upload'
         assert args.package_name == 'test'
         assert args.package_version == '1.0.0'
         assert args.files == ['file.txt']
@@ -279,6 +284,7 @@ class TestCreateArgumentParser:
         parser = create_argument_parser()
         for policy in ['skip', 'replace', 'error']:
             args = parser.parse_args([
+                'upload',
                 '--package-name', 'test',
                 '--package-version', '1.0.0',
                 '--files', 'file.txt',
@@ -292,6 +298,7 @@ class TestCreateArgumentParser:
         parser = create_argument_parser()
         with pytest.raises(SystemExit):
             parser.parse_args([
+                'upload',
                 '--package-name', 'test',
                 '--package-version', '1.0.0',
                 '--files', 'file.txt',
@@ -303,6 +310,7 @@ class TestCreateArgumentParser:
         """Test parser accepts multiple files."""
         parser = create_argument_parser()
         args = parser.parse_args([
+            'upload',
             '--package-name', 'test',
             '--package-version', '1.0.0',
             '--files', 'file1.txt', 'file2.txt', 'file3.txt'
@@ -314,6 +322,7 @@ class TestCreateArgumentParser:
         """Test parser has correct default values."""
         parser = create_argument_parser()
         args = parser.parse_args([
+            'upload',
             '--package-name', 'test',
             '--package-version', '1.0.0',
             '--files', 'file.txt'
@@ -333,6 +342,7 @@ class TestCreateArgumentParser:
         """Test parser accepts directory option."""
         parser = create_argument_parser()
         args = parser.parse_args([
+            'upload',
             '--package-name', 'test',
             '--package-version', '1.0.0',
             '--directory', '/path/to/dir'
@@ -345,6 +355,7 @@ class TestCreateArgumentParser:
         """Test parser accepts file mapping options."""
         parser = create_argument_parser()
         args = parser.parse_args([
+            'upload',
             '--package-name', 'test',
             '--package-version', '1.0.0',
             '--files', 'file.txt',
@@ -353,16 +364,30 @@ class TestCreateArgumentParser:
         ])
         assert args.file_mapping == ['file.txt:renamed.txt', 'other.bin:new.bin']
 
+    @pytest.mark.timeout(60)
+    def test_parser_global_flags_before_subcommand(self):
+        """Test global flags can be placed before the subcommand."""
+        parser = create_argument_parser()
+        args = parser.parse_args([
+            '--verbose',
+            'upload',
+            '--package-name', 'test',
+            '--package-version', '1.0.0',
+            '--files', 'file.txt'
+        ])
+        assert args.verbose is True
+        assert args.command == 'upload'
 
-class TestValidateFlags:
-    """Tests for validate_flags function."""
+
+class TestValidateUploadFlags:
+    """Tests for validate_upload_flags function."""
 
     @pytest.mark.timeout(60)
     def test_missing_package_name_raises_error(self, mock_args):
         """Test missing package name raises SystemExit."""
         mock_args.package_name = None
         with pytest.raises(SystemExit) as exc_info:
-            validate_flags(mock_args)
+            validate_upload_flags(mock_args)
         assert exc_info.value.code == 3
 
     @pytest.mark.timeout(60)
@@ -370,7 +395,7 @@ class TestValidateFlags:
         """Test missing package version raises SystemExit."""
         mock_args.package_version = None
         with pytest.raises(SystemExit) as exc_info:
-            validate_flags(mock_args)
+            validate_upload_flags(mock_args)
         assert exc_info.value.code == 3
 
     @pytest.mark.timeout(60)
@@ -379,16 +404,7 @@ class TestValidateFlags:
         mock_args.files = ["file.txt"]
         mock_args.directory = "/path/to/dir"
         with pytest.raises(SystemExit) as exc_info:
-            validate_flags(mock_args)
-        assert exc_info.value.code == 3
-
-    @pytest.mark.timeout(60)
-    def test_multiple_verbosity_flags_raises_error(self, mock_args):
-        """Test multiple verbosity flags raises error."""
-        mock_args.verbose = True
-        mock_args.quiet = True
-        with pytest.raises(SystemExit) as exc_info:
-            validate_flags(mock_args)
+            validate_upload_flags(mock_args)
         assert exc_info.value.code == 3
 
     @pytest.mark.timeout(60)
@@ -397,7 +413,7 @@ class TestValidateFlags:
         mock_args.project_url = "https://gitlab.com/group/project"
         mock_args.project_path = "group/project"
         with pytest.raises(SystemExit) as exc_info:
-            validate_flags(mock_args)
+            validate_upload_flags(mock_args)
         assert exc_info.value.code == 3
 
     @pytest.mark.timeout(60)
@@ -407,7 +423,7 @@ class TestValidateFlags:
         mock_args.directory = "/path/to/dir"
         mock_args.file_mapping = ["source:target"]
         with pytest.raises(SystemExit) as exc_info:
-            validate_flags(mock_args)
+            validate_upload_flags(mock_args)
         assert exc_info.value.code == 3
 
     @pytest.mark.timeout(60)
@@ -415,14 +431,14 @@ class TestValidateFlags:
         """Test negative retry count raises error."""
         mock_args.retry = -1
         with pytest.raises(SystemExit) as exc_info:
-            validate_flags(mock_args)
+            validate_upload_flags(mock_args)
         assert exc_info.value.code == 3
 
     @pytest.mark.timeout(60)
     def test_valid_flags_pass_validation(self, mock_args):
         """Test valid flag combination passes validation."""
         # Should not raise
-        validate_flags(mock_args)
+        validate_upload_flags(mock_args)
 
     @pytest.mark.timeout(60)
     def test_no_file_input_raises_error(self, mock_args):
@@ -430,26 +446,7 @@ class TestValidateFlags:
         mock_args.files = None
         mock_args.directory = None
         with pytest.raises(SystemExit) as exc_info:
-            validate_flags(mock_args)
-        assert exc_info.value.code == 3
-
-    @pytest.mark.timeout(60)
-    def test_all_verbosity_flags_raises_error(self, mock_args):
-        """Test all three verbosity flags raises error."""
-        mock_args.verbose = True
-        mock_args.quiet = True
-        mock_args.debug = True
-        with pytest.raises(SystemExit) as exc_info:
-            validate_flags(mock_args)
-        assert exc_info.value.code == 3
-
-    @pytest.mark.timeout(60)
-    def test_verbose_and_debug_raises_error(self, mock_args):
-        """Test verbose and debug flags raises error."""
-        mock_args.verbose = True
-        mock_args.debug = True
-        with pytest.raises(SystemExit) as exc_info:
-            validate_flags(mock_args)
+            validate_upload_flags(mock_args)
         assert exc_info.value.code == 3
 
     @pytest.mark.timeout(60)
@@ -457,14 +454,14 @@ class TestValidateFlags:
         """Test zero retry count is valid."""
         mock_args.retry = 0
         # Should not raise
-        validate_flags(mock_args)
+        validate_upload_flags(mock_args)
 
     @pytest.mark.timeout(60)
     def test_positive_retry_is_valid(self, mock_args):
         """Test positive retry count is valid."""
         mock_args.retry = 5
         # Should not raise
-        validate_flags(mock_args)
+        validate_upload_flags(mock_args)
 
 
 class TestGitAutoDetector:
@@ -483,7 +480,7 @@ class TestGitAutoDetector:
         assert detector.working_directory == "/custom/path"
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.git.Repo')
+    @patch('glpkg.cli.upload.git.Repo')
     def test_find_git_repository_success(self, mock_repo_class):
         """Test finding Git repository successfully."""
         mock_repo = MagicMock()
@@ -497,7 +494,7 @@ class TestGitAutoDetector:
         mock_repo_class.assert_called_once_with(".", search_parent_directories=True)
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.git.Repo')
+    @patch('glpkg.cli.upload.git.Repo')
     def test_find_git_repository_not_found(self, mock_repo_class):
         """Test Git repository not found returns None."""
         mock_repo_class.side_effect = git.InvalidGitRepositoryError()
@@ -508,7 +505,7 @@ class TestGitAutoDetector:
         assert repo is None
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.git.Repo')
+    @patch('glpkg.cli.upload.git.Repo')
     def test_find_git_repository_permission_error(self, mock_repo_class):
         """Test Git repository permission error raises ProjectResolutionError."""
         mock_repo_class.side_effect = PermissionError("Access denied")
@@ -519,7 +516,7 @@ class TestGitAutoDetector:
         assert "Permission denied" in str(exc_info.value)
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.git.Repo')
+    @patch('glpkg.cli.upload.git.Repo')
     def test_find_git_repository_git_command_error(self, mock_repo_class):
         """Test Git command error raises ProjectResolutionError."""
         mock_repo_class.side_effect = git.GitCommandError("git status", 128, stderr="fatal: error")
@@ -530,7 +527,7 @@ class TestGitAutoDetector:
         assert "Git command error" in str(exc_info.value)
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.git.Repo')
+    @patch('glpkg.cli.upload.git.Repo')
     def test_find_git_repository_os_error(self, mock_repo_class):
         """Test OS error raises ProjectResolutionError."""
         mock_repo_class.side_effect = OSError("Disk error")
@@ -563,7 +560,7 @@ class TestGitAutoDetector:
         assert not detector._is_known_non_gitlab_host("gitlab.example.com")
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_git_url')
+    @patch('glpkg.cli.upload.parse_git_url')
     def test_parse_git_url_success(self, mock_parse):
         """Test parsing Git URL successfully."""
         mock_parse.return_value = ("https://gitlab.com", "group/project")
@@ -574,7 +571,7 @@ class TestGitAutoDetector:
         assert result == ("https://gitlab.com", "group/project")
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_git_url')
+    @patch('glpkg.cli.upload.parse_git_url')
     def test_parse_git_url_non_gitlab(self, mock_parse):
         """Test parsing non-GitLab URL returns None."""
         mock_parse.return_value = ("https://github.com", "group/project")
@@ -585,7 +582,7 @@ class TestGitAutoDetector:
         assert result is None
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_git_url')
+    @patch('glpkg.cli.upload.parse_git_url')
     def test_parse_git_url_unknown_host(self, mock_parse):
         """Test parsing URL from unknown host still returns it."""
         mock_parse.return_value = ("https://git.example.com", "group/project")
@@ -597,7 +594,7 @@ class TestGitAutoDetector:
         assert result == ("https://git.example.com", "group/project")
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_git_url')
+    @patch('glpkg.cli.upload.parse_git_url')
     def test_parse_git_url_gitlab_like_error(self, mock_parse):
         """Test parsing GitLab-like URL that fails raises error."""
         mock_parse.side_effect = Exception("Parse error")
@@ -608,7 +605,7 @@ class TestGitAutoDetector:
         assert "format is unrecognized" in str(exc_info.value)
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_git_url')
+    @patch('glpkg.cli.upload.parse_git_url')
     def test_parse_git_url_non_gitlab_error_returns_none(self, mock_parse):
         """Test parsing non-GitLab URL that fails returns None."""
         mock_parse.side_effect = Exception("Parse error")
@@ -694,7 +691,7 @@ class TestProjectResolver:
         assert isinstance(resolver.project_cache, dict)
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.normalize_gitlab_url')
+    @patch('glpkg.cli.upload.normalize_gitlab_url')
     def test_parse_project_url_success(self, mock_normalize, mock_gitlab_client):
         """Test parsing project URL successfully."""
         mock_normalize.return_value = ("https://gitlab.com", "group/project")
@@ -709,7 +706,7 @@ class TestProjectResolver:
         assert result.project_name == "project"
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.normalize_gitlab_url')
+    @patch('glpkg.cli.upload.normalize_gitlab_url')
     def test_parse_project_url_nested_namespace(self, mock_normalize, mock_gitlab_client):
         """Test parsing project URL with nested namespace."""
         mock_normalize.return_value = ("https://gitlab.com", "group/subgroup/project")
@@ -721,7 +718,7 @@ class TestProjectResolver:
         assert result.project_name == "project"
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.normalize_gitlab_url')
+    @patch('glpkg.cli.upload.normalize_gitlab_url')
     def test_parse_project_url_invalid(self, mock_normalize, mock_gitlab_client):
         """Test parsing invalid project URL raises error."""
         mock_normalize.side_effect = Exception("Invalid URL")
@@ -813,7 +810,7 @@ class TestUploadContextBuilder:
         assert builder is not None
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.DuplicateDetector')
+    @patch('glpkg.cli.upload.DuplicateDetector')
     def test_build_context_success(self, mock_detector_class, mock_args, mock_gitlab_client):
         """Test building upload context successfully."""
         mock_detector = MagicMock()
@@ -839,7 +836,7 @@ class TestUploadContextBuilder:
         assert context.config.version == "1.0.0"
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.DuplicateDetector')
+    @patch('glpkg.cli.upload.DuplicateDetector')
     def test_build_context_with_verbosity(self, mock_detector_class, mock_args, mock_gitlab_client):
         """Test context building respects verbosity settings."""
         mock_detector = MagicMock()
@@ -860,7 +857,7 @@ class TestUploadContextBuilder:
         assert context.config.verbosity == "verbose"
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.DuplicateDetector')
+    @patch('glpkg.cli.upload.DuplicateDetector')
     def test_build_context_with_dry_run(self, mock_detector_class, mock_args, mock_gitlab_client):
         """Test context building with dry run enabled."""
         mock_detector = MagicMock()
@@ -881,7 +878,7 @@ class TestUploadContextBuilder:
         assert context.config.dry_run is True
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.DuplicateDetector')
+    @patch('glpkg.cli.upload.DuplicateDetector')
     def test_build_context_with_debug(self, mock_detector_class, mock_args, mock_gitlab_client):
         """Test context building with debug verbosity."""
         mock_detector = MagicMock()
@@ -902,7 +899,7 @@ class TestUploadContextBuilder:
         assert context.config.verbosity == "debug"
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.DuplicateDetector')
+    @patch('glpkg.cli.upload.DuplicateDetector')
     def test_build_context_with_replace_policy(self, mock_detector_class, mock_args, mock_gitlab_client):
         """Test context building with replace duplicate policy."""
         mock_detector = MagicMock()
@@ -922,7 +919,7 @@ class TestUploadContextBuilder:
         assert context.config.duplicate_policy == DuplicatePolicy.REPLACE
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.DuplicateDetector')
+    @patch('glpkg.cli.upload.DuplicateDetector')
     def test_build_context_error_handling(self, mock_detector_class, mock_args, mock_gitlab_client):
         """Test context building raises ConfigurationError on failure."""
         mock_detector_class.side_effect = Exception("Detector init failed")
@@ -953,7 +950,7 @@ class TestHelperFunctions:
         assert len(version) > 0
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.GitAutoDetector')
+    @patch('glpkg.cli.upload.GitAutoDetector')
     def test_auto_detect_project_success(self, mock_detector_class):
         """Test auto-detecting project successfully."""
         mock_detector = MagicMock()
@@ -974,7 +971,7 @@ class TestHelperFunctions:
         assert project_path == "group/project"
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.GitAutoDetector')
+    @patch('glpkg.cli.upload.GitAutoDetector')
     def test_auto_detect_project_no_repo(self, mock_detector_class):
         """Test auto-detect fails when no Git repository found."""
         mock_detector = MagicMock()
@@ -986,7 +983,7 @@ class TestHelperFunctions:
         assert "No Git repository found" in str(exc_info.value)
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.normalize_gitlab_url')
+    @patch('glpkg.cli.upload.normalize_gitlab_url')
     def test_resolve_project_manually_with_url(self, mock_normalize):
         """Test manual project resolution with URL."""
         mock_normalize.return_value = ("https://gitlab.com", "group/project")
@@ -1047,7 +1044,7 @@ class TestHelperFunctions:
         assert "No project specification provided" in str(exc_info.value)
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.normalize_gitlab_url')
+    @patch('glpkg.cli.upload.normalize_gitlab_url')
     def test_resolve_project_manually_url_parse_error(self, mock_normalize):
         """Test manual resolution with URL parse error."""
         mock_normalize.side_effect = Exception("Invalid URL format")
@@ -1083,421 +1080,49 @@ class TestHelperFunctions:
         assert "Invalid project path" in str(exc_info.value)
 
 
-class TestParseArguments:
-    """Tests for parse_arguments function."""
-
-    @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.argcomplete.autocomplete')
-    @patch('gitlab_pkg_upload.cli.validate_flags')
-    def test_parse_arguments_success(self, mock_validate, mock_autocomplete):
-        """Test parsing arguments successfully."""
-        result = parse_arguments([
-            '--package-name', 'test',
-            '--package-version', '1.0.0',
-            '--files', 'file.txt'
-        ])
-
-        assert result.package_name == "test"
-        assert result.package_version == "1.0.0"
-        mock_autocomplete.assert_called_once()
-
-    @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.argcomplete.autocomplete')
-    @patch('gitlab_pkg_upload.cli.validate_flags')
-    def test_parse_arguments_converts_duplicate_policy(self, mock_validate, mock_autocomplete):
-        """Test duplicate policy is converted to enum."""
-        result = parse_arguments([
-            '--package-name', 'test',
-            '--package-version', '1.0.0',
-            '--files', 'file.txt',
-            '--duplicate-policy', 'replace'
-        ])
-
-        assert result.duplicate_policy == DuplicatePolicy.REPLACE
-
-    @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.argcomplete.autocomplete')
-    @patch('gitlab_pkg_upload.cli.validate_flags')
-    def test_parse_arguments_all_policies(self, mock_validate, mock_autocomplete):
-        """Test all duplicate policies are converted correctly."""
-        for policy_str, policy_enum in [
-            ('skip', DuplicatePolicy.SKIP),
-            ('replace', DuplicatePolicy.REPLACE),
-            ('error', DuplicatePolicy.ERROR)
-        ]:
-            result = parse_arguments([
-                '--package-name', 'test',
-                '--package-version', '1.0.0',
-                '--files', 'file.txt',
-                '--duplicate-policy', policy_str
-            ])
-            assert result.duplicate_policy == policy_enum
-
-
 class TestMainFunction:
     """Tests for main function orchestration."""
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.auto_detect_project')
-    def test_main_authentication_error(self, mock_auto_detect, mock_setup_logging,
-                                       mock_parse_args, mock_args):
-        """Test main function handles authentication error."""
-        mock_parse_args.return_value = mock_args
-        mock_auto_detect.side_effect = AuthenticationError("Auth failed")
-
+    def test_main_no_subcommand_shows_help_and_exits_zero(self):
+        """Test main function with no subcommand exits with code 0."""
         with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 2
-
-    @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.auto_detect_project')
-    def test_main_configuration_error(self, mock_auto_detect, mock_setup_logging,
-                                      mock_parse_args, mock_args):
-        """Test main function handles configuration error."""
-        mock_parse_args.return_value = mock_args
-        mock_auto_detect.side_effect = ConfigurationError("Config error")
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 3
-
-    @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.auto_detect_project')
-    def test_main_project_resolution_error(self, mock_auto_detect, mock_setup_logging,
-                                           mock_parse_args, mock_args):
-        """Test main function handles project resolution error."""
-        mock_parse_args.return_value = mock_args
-        mock_auto_detect.side_effect = ProjectResolutionError("Project not found")
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 4
-
-    @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.auto_detect_project')
-    def test_main_file_not_found_error(self, mock_auto_detect, mock_setup_logging,
-                                       mock_parse_args, mock_args):
-        """Test main function handles FileNotFoundError."""
-        mock_parse_args.return_value = mock_args
-        mock_auto_detect.side_effect = FileNotFoundError("File missing")
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 5
-
-    @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.auto_detect_project')
-    def test_main_permission_error(self, mock_auto_detect, mock_setup_logging,
-                                   mock_parse_args, mock_args):
-        """Test main function handles PermissionError."""
-        mock_parse_args.return_value = mock_args
-        mock_auto_detect.side_effect = PermissionError("Access denied")
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 5
-
-    @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.auto_detect_project')
-    def test_main_value_error(self, mock_auto_detect, mock_setup_logging,
-                              mock_parse_args, mock_args):
-        """Test main function handles ValueError."""
-        mock_parse_args.return_value = mock_args
-        mock_auto_detect.side_effect = ValueError("Invalid value")
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 3
-
-    @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.auto_detect_project')
-    def test_main_connection_error(self, mock_auto_detect, mock_setup_logging,
-                                   mock_parse_args, mock_args):
-        """Test main function handles ConnectionError."""
-        mock_parse_args.return_value = mock_args
-        mock_auto_detect.side_effect = ConnectionError("Network error")
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 6
-
-    @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.auto_detect_project')
-    def test_main_timeout_error(self, mock_auto_detect, mock_setup_logging,
-                                mock_parse_args, mock_args):
-        """Test main function handles TimeoutError."""
-        mock_parse_args.return_value = mock_args
-        mock_auto_detect.side_effect = TimeoutError("Timed out")
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 6
-
-    @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.auto_detect_project')
-    def test_main_unexpected_error(self, mock_auto_detect, mock_setup_logging,
-                                   mock_parse_args, mock_args):
-        """Test main function handles unexpected errors."""
-        mock_parse_args.return_value = mock_args
-        mock_auto_detect.side_effect = RuntimeError("Unexpected error")
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
-
-        assert exc_info.value.code == 1
-
-    @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.resolve_project_manually')
-    @patch('gitlab_pkg_upload.cli.get_gitlab_token')
-    @patch('gitlab_pkg_upload.cli.Gitlab')
-    @patch('gitlab_pkg_upload.cli.ProjectResolver')
-    @patch('gitlab_pkg_upload.cli.UploadContextBuilder')
-    @patch('gitlab_pkg_upload.cli.collect_files')
-    @patch('gitlab_pkg_upload.cli.upload_files')
-    @patch('gitlab_pkg_upload.cli.OutputFormatter')
-    def test_main_success_flow(self, mock_formatter_class, mock_upload,
-                               mock_collect, mock_builder_class,
-                               mock_resolver_class, mock_gitlab_class,
-                               mock_get_token, mock_resolve_manual,
-                               mock_setup_logging, mock_parse_args, mock_args):
-        """Test main function success flow."""
-        # Setup args for manual project specification
-        mock_args.project_url = "https://gitlab.com/group/project"
-        mock_args.duplicate_policy = DuplicatePolicy.SKIP
-        mock_parse_args.return_value = mock_args
-        mock_resolve_manual.return_value = ("https://gitlab.com", "group/project")
-        mock_get_token.return_value = "test-token"
-
-        mock_gl = MagicMock()
-        mock_gitlab_class.return_value = mock_gl
-
-        mock_resolver = MagicMock()
-        mock_resolver.resolve_project_id.return_value = 12345
-        mock_resolver.validate_project_access.return_value = True
-        mock_resolver_class.return_value = mock_resolver
-
-        mock_builder = MagicMock()
-        mock_context = MagicMock()
-        mock_context.config = MagicMock()
-        mock_context.config.package_name = "test-package"
-        mock_context.config.version = "1.0.0"
-        mock_builder.build.return_value = mock_context
-        mock_builder_class.return_value = mock_builder
-
-        mock_collect.return_value = ([MagicMock()], [])
-        mock_result = MagicMock()
-        mock_result.success = True
-        mock_upload.return_value = [mock_result]
-
-        mock_formatter = MagicMock()
-        mock_formatter_class.return_value = mock_formatter
-
-        with pytest.raises(SystemExit) as exc_info:
-            main()
+            main([])
 
         assert exc_info.value.code == 0
-        mock_setup_logging.assert_called_once()
-        mock_gl.auth.assert_called_once()
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.resolve_project_manually')
-    @patch('gitlab_pkg_upload.cli.get_gitlab_token')
-    @patch('gitlab_pkg_upload.cli.Gitlab')
-    @patch('gitlab_pkg_upload.cli.ProjectResolver')
-    def test_main_project_access_validation_fails(self, mock_resolver_class,
-                                                   mock_gitlab_class, mock_get_token,
-                                                   mock_resolve_manual, mock_setup_logging,
-                                                   mock_parse_args, mock_args):
-        """Test main function when project access validation fails."""
-        mock_args.project_url = "https://gitlab.com/group/project"
-        mock_args.duplicate_policy = DuplicatePolicy.SKIP
-        mock_parse_args.return_value = mock_args
-        mock_resolve_manual.return_value = ("https://gitlab.com", "group/project")
-        mock_get_token.return_value = "test-token"
-
-        mock_gl = MagicMock()
-        mock_gitlab_class.return_value = mock_gl
-
-        mock_resolver = MagicMock()
-        mock_resolver.resolve_project_id.return_value = 12345
-        mock_resolver.validate_project_access.return_value = False
-        mock_resolver_class.return_value = mock_resolver
-
+    def test_main_help_flag(self):
+        """Test main function with --help exits with code 0."""
         with pytest.raises(SystemExit) as exc_info:
-            main()
+            main(['--help'])
 
-        assert exc_info.value.code == 4
+        assert exc_info.value.code == 0
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.resolve_project_manually')
-    @patch('gitlab_pkg_upload.cli.get_gitlab_token')
-    @patch('gitlab_pkg_upload.cli.Gitlab')
-    @patch('gitlab_pkg_upload.cli.ProjectResolver')
-    @patch('gitlab_pkg_upload.cli.UploadContextBuilder')
-    @patch('gitlab_pkg_upload.cli.collect_files')
-    def test_main_no_valid_files(self, mock_collect, mock_builder_class,
-                                 mock_resolver_class, mock_gitlab_class,
-                                 mock_get_token, mock_resolve_manual,
-                                 mock_setup_logging, mock_parse_args, mock_args):
-        """Test main function with no valid files to upload."""
-        mock_args.project_url = "https://gitlab.com/group/project"
-        mock_args.duplicate_policy = DuplicatePolicy.SKIP
-        mock_parse_args.return_value = mock_args
-        mock_resolve_manual.return_value = ("https://gitlab.com", "group/project")
-        mock_get_token.return_value = "test-token"
-
-        mock_gl = MagicMock()
-        mock_gitlab_class.return_value = mock_gl
-
-        mock_resolver = MagicMock()
-        mock_resolver.resolve_project_id.return_value = 12345
-        mock_resolver.validate_project_access.return_value = True
-        mock_resolver_class.return_value = mock_resolver
-
-        mock_builder = MagicMock()
-        mock_context = MagicMock()
-        mock_builder.build.return_value = mock_context
-        mock_builder_class.return_value = mock_builder
-
-        # No valid files
-        mock_collect.return_value = ([], [])
-
+    def test_main_version_flag(self):
+        """Test main function with --version exits with code 0."""
         with pytest.raises(SystemExit) as exc_info:
-            main()
+            main(['--version'])
 
-        assert exc_info.value.code == 5
+        assert exc_info.value.code == 0
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.resolve_project_manually')
-    @patch('gitlab_pkg_upload.cli.get_gitlab_token')
-    @patch('gitlab_pkg_upload.cli.Gitlab')
-    @patch('gitlab_pkg_upload.cli.ProjectResolver')
-    @patch('gitlab_pkg_upload.cli.UploadContextBuilder')
-    @patch('gitlab_pkg_upload.cli.collect_files')
-    @patch('gitlab_pkg_upload.cli.upload_files')
-    @patch('gitlab_pkg_upload.cli.OutputFormatter')
-    def test_main_partial_upload_failure(self, mock_formatter_class, mock_upload,
-                                         mock_collect, mock_builder_class,
-                                         mock_resolver_class, mock_gitlab_class,
-                                         mock_get_token, mock_resolve_manual,
-                                         mock_setup_logging, mock_parse_args, mock_args):
-        """Test main function with partial upload failures."""
-        mock_args.project_url = "https://gitlab.com/group/project"
-        mock_args.duplicate_policy = DuplicatePolicy.SKIP
-        mock_parse_args.return_value = mock_args
-        mock_resolve_manual.return_value = ("https://gitlab.com", "group/project")
-        mock_get_token.return_value = "test-token"
-
-        mock_gl = MagicMock()
-        mock_gitlab_class.return_value = mock_gl
-
-        mock_resolver = MagicMock()
-        mock_resolver.resolve_project_id.return_value = 12345
-        mock_resolver.validate_project_access.return_value = True
-        mock_resolver_class.return_value = mock_resolver
-
-        mock_builder = MagicMock()
-        mock_context = MagicMock()
-        mock_context.config = MagicMock()
-        mock_context.config.package_name = "test-package"
-        mock_context.config.version = "1.0.0"
-        mock_builder.build.return_value = mock_context
-        mock_builder_class.return_value = mock_builder
-
-        mock_collect.return_value = ([MagicMock(), MagicMock()], [])
-        # One success, one failure
-        mock_result1 = MagicMock()
-        mock_result1.success = True
-        mock_result2 = MagicMock()
-        mock_result2.success = False
-        mock_upload.return_value = [mock_result1, mock_result2]
-
-        mock_formatter = MagicMock()
-        mock_formatter_class.return_value = mock_formatter
-
+    def test_main_upload_help_flag(self):
+        """Test main function with upload --help exits with code 0."""
         with pytest.raises(SystemExit) as exc_info:
-            main()
+            main(['upload', '--help'])
 
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.parse_arguments')
-    @patch('gitlab_pkg_upload.cli.setup_logging')
-    @patch('gitlab_pkg_upload.cli.resolve_project_manually')
-    @patch('gitlab_pkg_upload.cli.get_gitlab_token')
-    @patch('gitlab_pkg_upload.cli.Gitlab')
-    @patch('gitlab_pkg_upload.cli.ProjectResolver')
-    @patch('gitlab_pkg_upload.cli.UploadContextBuilder')
-    @patch('gitlab_pkg_upload.cli.collect_files')
-    def test_main_file_errors_with_fail_fast(self, mock_collect, mock_builder_class,
-                                             mock_resolver_class, mock_gitlab_class,
-                                             mock_get_token, mock_resolve_manual,
-                                             mock_setup_logging, mock_parse_args, mock_args):
-        """Test main function with file errors and fail_fast enabled."""
-        mock_args.project_url = "https://gitlab.com/group/project"
-        mock_args.duplicate_policy = DuplicatePolicy.SKIP
-        mock_args.fail_fast = True
-        mock_parse_args.return_value = mock_args
-        mock_resolve_manual.return_value = ("https://gitlab.com", "group/project")
-        mock_get_token.return_value = "test-token"
-
-        mock_gl = MagicMock()
-        mock_gitlab_class.return_value = mock_gl
-
-        mock_resolver = MagicMock()
-        mock_resolver.resolve_project_id.return_value = 12345
-        mock_resolver.validate_project_access.return_value = True
-        mock_resolver_class.return_value = mock_resolver
-
-        mock_builder = MagicMock()
-        mock_context = MagicMock()
-        mock_builder.build.return_value = mock_context
-        mock_builder_class.return_value = mock_builder
-
-        # Files with errors
-        mock_collect.return_value = (
-            [MagicMock()],
-            [{'source_path': 'bad.txt', 'error_message': 'Invalid file'}]
-        )
-
+    def test_main_conflicting_verbosity_flags(self):
+        """Test main function detects conflicting verbosity flags."""
         with pytest.raises(SystemExit) as exc_info:
-            main()
+            main(['--verbose', '--quiet', 'upload', '--package-name', 'test',
+                  '--package-version', '1.0.0', '--files', 'file.txt'])
 
-        assert exc_info.value.code == 5
+        assert exc_info.value.code == 3
 
 
 class TestExceptionExitCodeMapping:
@@ -1594,7 +1219,7 @@ class TestEdgeCases:
         assert len(remotes) == 1
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.normalize_gitlab_url')
+    @patch('glpkg.cli.upload.normalize_gitlab_url')
     def test_project_resolver_deeply_nested_namespace(self, mock_normalize, mock_gitlab_client):
         """Test parsing URL with deeply nested namespace."""
         mock_normalize.return_value = (
@@ -1611,7 +1236,7 @@ class TestEdgeCases:
         assert result.project_name == "project"
 
     @pytest.mark.timeout(60)
-    def test_validate_flags_multiple_errors_all_reported(self, mock_args, capsys):
+    def test_validate_upload_flags_multiple_errors_all_reported(self, mock_args, capsys):
         """Test that multiple validation errors are all reported."""
         mock_args.package_name = None
         mock_args.package_version = None
@@ -1619,7 +1244,7 @@ class TestEdgeCases:
         mock_args.directory = None
 
         with pytest.raises(SystemExit) as exc_info:
-            validate_flags(mock_args)
+            validate_upload_flags(mock_args)
 
         assert exc_info.value.code == 3
         captured = capsys.readouterr()
@@ -1652,7 +1277,7 @@ class TestEdgeCases:
         assert determine_verbosity(mock_args) == "quiet"
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.DuplicateDetector')
+    @patch('glpkg.cli.upload.DuplicateDetector')
     def test_build_context_with_json_output(self, mock_detector_class, mock_args, mock_gitlab_client):
         """Test context building with JSON output enabled."""
         mock_detector = MagicMock()
@@ -1673,7 +1298,7 @@ class TestEdgeCases:
         assert context.config.json_output is True
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.DuplicateDetector')
+    @patch('glpkg.cli.upload.DuplicateDetector')
     def test_build_context_with_plain_output(self, mock_detector_class, mock_args, mock_gitlab_client):
         """Test context building with plain output enabled."""
         mock_detector = MagicMock()
@@ -1694,7 +1319,7 @@ class TestEdgeCases:
         assert context.config.plain_output is True
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.DuplicateDetector')
+    @patch('glpkg.cli.upload.DuplicateDetector')
     def test_build_context_with_fail_fast(self, mock_detector_class, mock_args, mock_gitlab_client):
         """Test context building with fail_fast enabled."""
         mock_detector = MagicMock()
@@ -1715,7 +1340,7 @@ class TestEdgeCases:
         assert context.config.fail_fast is True
 
     @pytest.mark.timeout(60)
-    @patch('gitlab_pkg_upload.cli.DuplicateDetector')
+    @patch('glpkg.cli.upload.DuplicateDetector')
     def test_build_context_with_retry_count(self, mock_detector_class, mock_args, mock_gitlab_client):
         """Test context building with custom retry count."""
         mock_detector = MagicMock()

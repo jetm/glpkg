@@ -37,4 +37,4 @@ jobs:
         run: uv run ruff format --check src/
 
       - name: Run Mypy type checking
-        run: uv run mypy src/gitlab_pkg_upload/ --strict
+        run: uv run mypy src/glpkg/ --strict
