@@ -32,8 +32,10 @@ dependencies = [
 dev = [
     "bump-my-version",
     "mypy",
+    "pex>=2.0.0",
     "pre-commit",
     "ruff",
+    "shiv>=1.0.0",
 ]
 test = [
     "pytest",

@@ -23,11 +23,24 @@ jobs:
       - name: Install build dependencies
         run: uv pip install build --system
 
+      - name: Install build tools for .pyz
+        run: uv pip install shiv --system
+
       - name: Build package distributions
         run: python -m build
 
+      - name: Build .pyz universal binary
+        run: bash scripts/build_pyz.sh --tool shiv --output-dir dist
+
       - name: List built artifacts
         run: ls -la dist/
+
+      - name: Upload .pyz to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/glpkg.pyz
+          fail_on_unmatched_files: true
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

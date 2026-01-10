@@ -25,6 +25,10 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Shiv/PEX universal binaries
+*.pyz
+*.pex
+
 # PyInstaller
 *.manifest
 *.spec
