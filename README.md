@@ -73,6 +73,33 @@ uv sync --all-extras
 pip install -e ".[dev,test]"
 ```
 
+### Pre-commit Hooks
+
+Pre-commit hooks automate code quality checks locally before each commit, ensuring consistency with the CI/CD pipeline.
+
+```bash
+# Install pre-commit hooks
+uv run pre-commit install
+
+# Or using pip
+pre-commit install
+```
+
+Once installed, hooks run automatically on `git commit`. You can also run them manually:
+
+```bash
+# Run all hooks on all files
+uv run pre-commit run --all-files
+
+# Update hook versions
+uv run pre-commit autoupdate
+```
+
+The configured hooks include:
+- **Ruff**: Linting and code formatting
+- **Mypy**: Static type checking with strict mode
+- **File maintenance**: Trailing whitespace removal, end-of-file fixes, YAML/TOML validation
+
 ### Running Tests
 
 ```bash
@@ -99,6 +126,10 @@ uv run pytest tests/ -v
 See [tests/README.md](tests/README.md) for detailed testing documentation.
 
 ### Code Quality
+
+Pre-commit hooks automate these checks on every commit. See [Pre-commit Hooks](#pre-commit-hooks) for setup.
+
+To run checks manually:
 
 ```bash
 # Run linter
