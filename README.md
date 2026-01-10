@@ -1,9 +1,9 @@
 # glpkg
 
-![Tests](https://github.com/OWNER/REPO/actions/workflows/test.yml/badge.svg)
-![Lint](https://github.com/OWNER/REPO/actions/workflows/lint.yml/badge.svg)
-![Publish](https://github.com/OWNER/REPO/actions/workflows/publish.yml/badge.svg)
-![Docs](https://github.com/OWNER/REPO/actions/workflows/docs.yml/badge.svg)
+![Tests](https://github.com/jetm/glpkg/actions/workflows/test.yml/badge.svg)
+![Lint](https://github.com/jetm/glpkg/actions/workflows/lint.yml/badge.svg)
+![Publish](https://github.com/jetm/glpkg/actions/workflows/publish.yml/badge.svg)
+![Docs](https://github.com/jetm/glpkg/actions/workflows/docs.yml/badge.svg)
 ![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)
 
 A CLI tool for uploading files to GitLab's Generic Package Registry.
