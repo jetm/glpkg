@@ -14,10 +14,8 @@ from typing import Any, Dict, List, Optional
 
 from rich.console import Console
 from rich.status import Status
-from rich.table import Table
 
 from .models import GitLabUploadError, UploadConfig, UploadResult, enhance_error_message
-
 
 # Terminal Detection Functions
 
@@ -189,9 +187,7 @@ class OutputFormatter:
             legacy_windows=False,
         )
 
-    def format_output(
-        self, results: List[UploadResult], package_name: str, version: str
-    ) -> None:
+    def format_output(self, results: List[UploadResult], package_name: str, version: str) -> None:
         """Format and output upload results based on configuration.
 
         Determines the appropriate output format based on config.json_output
@@ -247,9 +243,13 @@ class OutputFormatter:
                 self.console.print(f"[cyan]Target Filename:[/cyan] {result.target_filename}")
                 self.console.print(f"[cyan]Download URL:[/cyan] [blue]{result.result}[/blue]")
                 if result.was_duplicate and result.duplicate_action == "replaced":
-                    self.console.print("[cyan]Action:[/cyan] [yellow]Replaced existing duplicate[/yellow]")
+                    self.console.print(
+                        "[cyan]Action:[/cyan] [yellow]Replaced existing duplicate[/yellow]"
+                    )
                     if result.existing_url is not None:
-                        self.console.print(f"[cyan]Previous URL:[/cyan] [dim]{result.existing_url}[/dim]")
+                        self.console.print(
+                            f"[cyan]Previous URL:[/cyan] [dim]{result.existing_url}[/dim]"
+                        )
                 self.console.print()
 
         # Display Skipped Duplicates Section
@@ -258,7 +258,8 @@ class OutputFormatter:
             for result in skipped_duplicates:
                 self.console.print(f"[cyan]Source File:[/cyan] {result.source_path}")
                 self.console.print(f"[cyan]Target Filename:[/cyan] {result.target_filename}")
-                self.console.print(f"[cyan]Existing URL:[/cyan] [blue]{result.existing_url or result.result}[/blue]")
+                existing_url = result.existing_url or result.result
+                self.console.print(f"[cyan]Existing URL:[/cyan] [blue]{existing_url}[/blue]")
                 self.console.print(f"[cyan]Reason:[/cyan] {result.result}")
                 self.console.print()
 
@@ -272,12 +273,16 @@ class OutputFormatter:
                 if result.was_duplicate:
                     self.console.print(f"[cyan]Duplicate Action:[/cyan] {result.duplicate_action}")
                     if result.existing_url is not None:
-                        self.console.print(f"[cyan]Existing URL:[/cyan] [blue]{result.existing_url}[/blue]")
+                        self.console.print(
+                            f"[cyan]Existing URL:[/cyan] [blue]{result.existing_url}[/blue]"
+                        )
                 self.console.print()
 
         # Calculate and Display Statistics
         total_processed = len(successful_uploads) + len(skipped_duplicates) + len(failed_uploads)
-        replaced_count = sum(1 for r in successful_uploads if r.was_duplicate and r.duplicate_action == "replaced")
+        replaced_count = sum(
+            1 for r in successful_uploads if r.was_duplicate and r.duplicate_action == "replaced"
+        )
         new_uploads_count = len(successful_uploads) - replaced_count
 
         self.console.print("\n[bold]Duplicate Detection Statistics:[/bold]")
@@ -288,10 +293,20 @@ class OutputFormatter:
         self.console.print(f"• Total processed: {total_processed}")
 
         # Display Final Results Summary
-        self.console.print(f"\n[bold]Final Results:[/bold] {len(successful_uploads)} uploaded ({new_uploads_count} new, {replaced_count} replaced), {len(skipped_duplicates)} skipped duplicates, {len(failed_uploads)} failed out of {total_processed} total")
+        self.console.print(
+            f"\n[bold]Final Results:[/bold] {len(successful_uploads)} uploaded "
+            f"({new_uploads_count} new, {replaced_count} replaced), "
+            f"{len(skipped_duplicates)} skipped duplicates, "
+            f"{len(failed_uploads)} failed out of {total_processed} total"
+        )
 
         if not failed_uploads:
-            self.console.print(f"\n[bold green]✓[/bold green] All files processed successfully for {package_name} v{version}: {new_uploads_count} new uploads, {replaced_count} replaced duplicates, {len(skipped_duplicates)} skipped duplicates")
+            self.console.print(
+                f"\n[bold green]✓[/bold green] All files processed successfully "
+                f"for {package_name} v{version}: {new_uploads_count} new uploads, "
+                f"{replaced_count} replaced duplicates, "
+                f"{len(skipped_duplicates)} skipped duplicates"
+            )
 
     def _format_json_output(
         self, results: List[UploadResult], package_name: str, version: str
@@ -322,48 +337,53 @@ class OutputFormatter:
         # Build upload result objects for each category
         successful_uploads_data = []
         for result in successful_uploads:
-            successful_uploads_data.append({
-                "source_path": result.source_path,
-                "target_filename": result.target_filename,
-                "download_url": result.result,
-                "checksum": None,  # Reserved for future use
-                "was_duplicate": result.was_duplicate,
-                "duplicate_action": result.duplicate_action,
-                "existing_url": result.existing_url,
-                "error_message": None,
-            })
+            successful_uploads_data.append(
+                {
+                    "source_path": result.source_path,
+                    "target_filename": result.target_filename,
+                    "download_url": result.result,
+                    "checksum": None,  # Reserved for future use
+                    "was_duplicate": result.was_duplicate,
+                    "duplicate_action": result.duplicate_action,
+                    "existing_url": result.existing_url,
+                    "error_message": None,
+                }
+            )
 
         skipped_duplicates_data = []
         for result in skipped_duplicates:
-            skipped_duplicates_data.append({
-                "source_path": result.source_path,
-                "target_filename": result.target_filename,
-                "download_url": result.existing_url or result.result,
-                "checksum": None,
-                "was_duplicate": result.was_duplicate,
-                "duplicate_action": result.duplicate_action,
-                "existing_url": result.existing_url,
-                "error_message": None,
-            })
+            skipped_duplicates_data.append(
+                {
+                    "source_path": result.source_path,
+                    "target_filename": result.target_filename,
+                    "download_url": result.existing_url or result.result,
+                    "checksum": None,
+                    "was_duplicate": result.was_duplicate,
+                    "duplicate_action": result.duplicate_action,
+                    "existing_url": result.existing_url,
+                    "error_message": None,
+                }
+            )
 
         failed_uploads_data = []
         for result in failed_uploads:
-            failed_uploads_data.append({
-                "source_path": result.source_path,
-                "target_filename": result.target_filename,
-                "download_url": None,
-                "checksum": None,
-                "was_duplicate": result.was_duplicate,
-                "duplicate_action": result.duplicate_action,
-                "existing_url": result.existing_url,
-                "error_message": result.result,
-            })
+            failed_uploads_data.append(
+                {
+                    "source_path": result.source_path,
+                    "target_filename": result.target_filename,
+                    "download_url": None,
+                    "checksum": None,
+                    "was_duplicate": result.was_duplicate,
+                    "duplicate_action": result.duplicate_action,
+                    "existing_url": result.existing_url,
+                    "error_message": result.result,
+                }
+            )
 
         # Calculate statistics
         total_processed = len(successful_uploads) + len(skipped_duplicates) + len(failed_uploads)
         replaced_count = sum(
-            1 for r in successful_uploads
-            if r.was_duplicate and r.duplicate_action == "replaced"
+            1 for r in successful_uploads if r.was_duplicate and r.duplicate_action == "replaced"
         )
         new_uploads_count = len(successful_uploads) - replaced_count
 
@@ -467,8 +487,7 @@ class OutputFormatter:
         # Calculate statistics
         total_processed = len(successful_uploads) + len(skipped_duplicates) + len(failed_uploads)
         replaced_count = sum(
-            1 for r in successful_uploads
-            if r.was_duplicate and r.duplicate_action == "replaced"
+            1 for r in successful_uploads if r.was_duplicate and r.duplicate_action == "replaced"
         )
         new_uploads_count = len(successful_uploads) - replaced_count
 
@@ -481,10 +500,20 @@ class OutputFormatter:
         print(f"* Total processed: {total_processed}")
 
         # Display Final Results
-        print(f"\nFinal Results: {len(successful_uploads)} uploaded ({new_uploads_count} new, {replaced_count} replaced), {len(skipped_duplicates)} skipped duplicates, {len(failed_uploads)} failed out of {total_processed} total")
+        print(
+            f"\nFinal Results: {len(successful_uploads)} uploaded "
+            f"({new_uploads_count} new, {replaced_count} replaced), "
+            f"{len(skipped_duplicates)} skipped duplicates, "
+            f"{len(failed_uploads)} failed out of {total_processed} total"
+        )
 
         if not failed_uploads:
-            print(f"\n[OK] All files processed successfully for {package_name} v{version}: {new_uploads_count} new uploads, {replaced_count} replaced duplicates, {len(skipped_duplicates)} skipped duplicates")
+            print(
+                f"\n[OK] All files processed successfully "
+                f"for {package_name} v{version}: {new_uploads_count} new uploads, "
+                f"{replaced_count} replaced duplicates, "
+                f"{len(skipped_duplicates)} skipped duplicates"
+            )
 
     def create_progress_spinner(self, message: str) -> Status:
         """Create a progress spinner for long-running operations.
@@ -508,9 +537,7 @@ class OutputFormatter:
 # Error Formatting Function
 
 
-def format_error(
-    error: Exception, context: Optional[Dict[str, Any]] = None
-) -> str:
+def format_error(error: Exception, context: Optional[Dict[str, Any]] = None) -> str:
     """Format error messages with context for better debugging.
 
     Uses enhanced error messages from models.py when context is available.

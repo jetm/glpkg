@@ -177,9 +177,7 @@ class ChecksumValidationError(GitLabUploadError):
 # Error Enhancement Functions
 
 
-def handle_project_not_found_error(
-    project_path: str, gitlab_url: str, original_error: str
-) -> str:
+def handle_project_not_found_error(project_path: str, gitlab_url: str, original_error: str) -> str:
     """
     Generate helpful error message for project not found errors.
 
@@ -209,9 +207,7 @@ def handle_project_not_found_error(
     )
 
 
-def handle_authentication_error(
-    project_path: str, gitlab_url: str, original_error: str
-) -> str:
+def handle_authentication_error(project_path: str, gitlab_url: str, original_error: str) -> str:
     """
     Generate helpful error message for authentication failures.
 
@@ -298,7 +294,8 @@ def handle_network_connectivity_error(gitlab_url: str, original_error: str) -> s
         f"  1. Test connectivity: curl -I {gitlab_url}\n"
         f"  2. Check GitLab status page (if available)\n"
         f"  3. Try accessing {gitlab_url} in a web browser\n"
-        f"  4. Verify DNS resolution: nslookup {gitlab_url.replace('https://', '').replace('http://', '')}\n\n"
+        f"  4. Verify DNS resolution: nslookup "
+        f"{gitlab_url.replace('https://', '').replace('http://', '')}\n\n"
         f"If using a corporate network:\n"
         f"  • Check proxy settings\n"
         f"  • Verify SSL certificate trust\n"
@@ -307,7 +304,7 @@ def handle_network_connectivity_error(gitlab_url: str, original_error: str) -> s
     )
 
 
-def enhance_error_message(error: Exception, context: dict) -> str:
+def enhance_error_message(error: Exception, context: dict[str, str]) -> str:
     """
     Enhance error messages with context and helpful suggestions.
 
@@ -329,14 +326,9 @@ def enhance_error_message(error: Exception, context: dict) -> str:
     if "404" in error_msg or "not found" in error_msg:
         return handle_project_not_found_error(project_path, gitlab_url, original_error)
 
-    elif any(
-        keyword in error_msg
-        for keyword in ["401", "403", "authentication", "unauthorized"]
-    ):
+    elif any(keyword in error_msg for keyword in ["401", "403", "authentication", "unauthorized"]):
         if "permission" in error_msg or "forbidden" in error_msg:
-            return handle_permission_error(
-                project_path, gitlab_url, operation, original_error
-            )
+            return handle_permission_error(project_path, gitlab_url, operation, original_error)
         else:
             return handle_authentication_error(project_path, gitlab_url, original_error)
 

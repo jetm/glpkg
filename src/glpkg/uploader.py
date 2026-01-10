@@ -5,9 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import Optional
 
-from gitlab import Gitlab
 from gitlab.exceptions import GitlabError
 from tenacity import (
     retry,
@@ -20,7 +18,6 @@ from .duplicate_detector import calculate_sha256
 from .models import (
     ChecksumValidationError,
     DuplicatePolicy,
-    NetworkError,
     RemoteFile,
     UploadContext,
     UploadResult,
@@ -29,7 +26,7 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 
-def is_transient_error(exception: Exception) -> bool:
+def is_transient_error(exception: BaseException) -> bool:
     """
     Determine if an exception represents a transient error that should be retried.
 
@@ -154,9 +151,7 @@ def upload_single_file(context: UploadContext, file: Path, target_filename: str)
     )
 
     elapsed_time = time.time() - start_time
-    logger.info(
-        f"Uploaded {target_filename} ({file_size_mb:.2f} MB) in {elapsed_time:.2f}s"
-    )
+    logger.info(f"Uploaded {target_filename} ({file_size_mb:.2f} MB) in {elapsed_time:.2f}s")
 
     # Construct download URL
     download_url = (
@@ -167,9 +162,7 @@ def upload_single_file(context: UploadContext, file: Path, target_filename: str)
     return download_url
 
 
-def validate_upload(
-    context: UploadContext, filename: str, expected_sha256: str
-) -> bool:
+def validate_upload(context: UploadContext, filename: str, expected_sha256: str) -> bool:
     """
     Validate that an uploaded file has the correct checksum in the registry.
 
@@ -193,18 +186,15 @@ def validate_upload(
     logger.debug(f"Expected SHA256: {expected_sha256}")
 
     project = context.gl.projects.get(context.project_id)
-    packages = project.packages.list(
-        package_name=context.config.package_name, get_all=True
-    )
+    packages = project.packages.list(package_name=context.config.package_name, get_all=True)
 
     # Find the target package version
-    target_package = next(
-        (p for p in packages if p.version == context.config.version), None
-    )
+    target_package = next((p for p in packages if p.version == context.config.version), None)
 
     if not target_package:
         logger.error(
-            f"Package {context.config.package_name} v{context.config.version} not found during validation"
+            f"Package {context.config.package_name} v{context.config.version} "
+            "not found during validation"
         )
         return False
 
@@ -244,17 +234,12 @@ def validate_upload(
         return True
 
     # Checksum mismatch - this is an error
-    error_msg = (
-        f"Checksum mismatch for {filename}: "
-        f"expected {expected_sha256}, got {remote_sha256}"
-    )
+    error_msg = f"Checksum mismatch for {filename}: expected {expected_sha256}, got {remote_sha256}"
     logger.error(error_msg)
     raise ChecksumValidationError(error_msg)
 
 
-def handle_duplicate(
-    context: UploadContext, file: Path, remote: RemoteFile
-) -> tuple[str, str]:
+def handle_duplicate(context: UploadContext, file: Path, remote: RemoteFile) -> tuple[str, str]:
     """
     Handle a detected duplicate file based on the configured policy.
 
@@ -320,14 +305,10 @@ def delete_file_from_registry(context: UploadContext, filename: str) -> int:
     logger.debug(f"Deleting {filename} from registry")
 
     project = context.gl.projects.get(context.project_id)
-    packages = project.packages.list(
-        package_name=context.config.package_name, get_all=True
-    )
+    packages = project.packages.list(package_name=context.config.package_name, get_all=True)
 
     # Find the target package version
-    target_package = next(
-        (p for p in packages if p.version == context.config.version), None
-    )
+    target_package = next((p for p in packages if p.version == context.config.version), None)
 
     if not target_package:
         logger.warning(
@@ -358,9 +339,7 @@ def delete_file_from_registry(context: UploadContext, filename: str) -> int:
     return deleted_count
 
 
-def upload_files(
-    context: UploadContext, files: list[tuple[Path, str]]
-) -> list[UploadResult]:
+def upload_files(context: UploadContext, files: list[tuple[Path, str]]) -> list[UploadResult]:
     """
     Upload multiple files to the GitLab generic package registry.
 
@@ -386,9 +365,7 @@ def upload_files(
             )
 
             if session_duplicate:
-                logger.info(
-                    f"Session duplicate detected for {target_filename}, skipping"
-                )
+                logger.info(f"Session duplicate detected for {target_filename}, skipping")
                 # Construct URL from session duplicate info
                 existing_url = (
                     f"{context.config.gitlab_url}/api/v4/projects/{context.project_id}"
@@ -421,9 +398,7 @@ def upload_files(
 
             if remote_duplicate:
                 try:
-                    action, result_value = handle_duplicate(
-                        context, source_path, remote_duplicate
-                    )
+                    action, result_value = handle_duplicate(context, source_path, remote_duplicate)
 
                     if action == "skipped":
                         results.append(

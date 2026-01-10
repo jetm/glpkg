@@ -59,7 +59,6 @@ from glpkg.models import (
 )
 from glpkg.uploader import upload_files
 from glpkg.validators import (
-    DEFAULT_GITLAB_URL,
     collect_files,
     get_gitlab_token,
     normalize_gitlab_url,
@@ -414,7 +413,7 @@ class ProjectResolver:
         try:
             logger.debug(f"Resolving project ID for: {project_path}")
             project = self.gl.projects.get(project_path)
-            project_id = project.id
+            project_id: int = project.id
 
             # Cache the result
             self.project_cache[cache_key] = project_id
@@ -508,7 +507,9 @@ class UploadContextBuilder:
                 token=token,  # Resolved token (from CLI or environment)
             )
 
-            logger.debug(f"Created UploadConfig: package={config.package_name}, version={config.version}")
+            logger.debug(
+                f"Created UploadConfig: package={config.package_name}, version={config.version}"
+            )
 
             # Initialize DuplicateDetector
             detector = DuplicateDetector(gl, project_id)
@@ -680,20 +681,17 @@ def validate_upload_flags(args: argparse.Namespace) -> None:
     # Check required arguments for upload runs
     if not args.package_name:
         errors.append(
-            "--package-name is required. "
-            "Specify the package name in the GitLab registry."
+            "--package-name is required. Specify the package name in the GitLab registry."
         )
     if not args.package_version:
-        errors.append(
-            "--package-version is required. "
-            "Specify the package version."
-        )
+        errors.append("--package-version is required. Specify the package version.")
 
     # Check for conflicting file input flags
     if args.files and args.directory:
         errors.append(
             "Cannot specify both --files and --directory. "
-            "Use --files for explicit file list or --directory to upload all files from a directory."
+            "Use --files for explicit file list or --directory to upload "
+            "all files from a directory."
         )
 
     # Check for conflicting project specification
@@ -707,7 +705,8 @@ def validate_upload_flags(args: argparse.Namespace) -> None:
     if not args.files and not args.directory:
         errors.append(
             "Either --files or --directory must be provided. "
-            "Use --files for explicit file list or --directory to upload all files from a directory."
+            "Use --files for explicit file list or --directory to upload "
+            "all files from a directory."
         )
 
     # Check that file-mapping is only used with --files
@@ -719,9 +718,7 @@ def validate_upload_flags(args: argparse.Namespace) -> None:
 
     # Check retry value is non-negative
     if args.retry < 0:
-        errors.append(
-            f"--retry must be a non-negative integer, got {args.retry}."
-        )
+        errors.append(f"--retry must be a non-negative integer, got {args.retry}.")
 
     # Report all errors
     if errors:
@@ -734,7 +731,9 @@ def validate_upload_flags(args: argparse.Namespace) -> None:
         sys.exit(3)  # ConfigurationError exit code
 
 
-def register_upload_command(subparsers: argparse._SubParsersAction) -> None:
+def register_upload_command(
+    subparsers: "argparse._SubParsersAction[argparse.ArgumentParser]",
+) -> None:
     """Register the upload subcommand with the main argument parser.
 
     Args:
@@ -939,8 +938,7 @@ def execute_upload(args: argparse.Namespace) -> None:
         # Validate access
         if not resolver.validate_project_access(project_id):
             raise ProjectResolutionError(
-                f"Cannot access project {project_path}. "
-                f"Verify you have appropriate permissions."
+                f"Cannot access project {project_path}. Verify you have appropriate permissions."
             )
 
         # Log success

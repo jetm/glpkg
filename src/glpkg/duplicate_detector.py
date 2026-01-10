@@ -5,12 +5,14 @@ from __future__ import annotations
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional, TypeVar
+
+from .models import FileFingerprint, RemoteFile
 
 if TYPE_CHECKING:
     from gitlab import Gitlab
 
-from .models import FileFingerprint, RemoteFile
+T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +38,10 @@ def calculate_sha256(file_path: Path) -> str:
 
 def handle_network_error_with_retry(
     operation_name: str,
-    operation_func,
+    operation_func: Callable[[], T],
     max_retries: int = 3,
     retry_delays: list[int] | None = None,
-):
+) -> T:
     """
     Execute an operation with retry logic for network errors.
 
@@ -74,11 +76,12 @@ def handle_network_error_with_retry(
             else:
                 logger.error(f"{operation_name} failed after {max_retries + 1} attempts: {e}")
 
+    assert last_exception is not None
     raise last_exception
 
 
 class DuplicateDetector:
-    """Core component responsible for detecting duplicates both locally (within session) and remotely (in GitLab registry)."""
+    """Detect duplicates locally (within session) and remotely (in GitLab)."""
 
     def __init__(self, gitlab_client: Gitlab, project_id: int):
         """
@@ -121,7 +124,8 @@ class DuplicateDetector:
                     f"Session duplicate detected: {target_filename} (checksum: {current_checksum})"
                 )
                 logger.info(
-                    f"Original source: {existing_fingerprint.source_path}, Current source: {file_path}"
+                    f"Original source: {existing_fingerprint.source_path}, "
+                    f"Current source: {file_path}"
                 )
                 return existing_fingerprint
             else:
@@ -129,7 +133,8 @@ class DuplicateDetector:
                     f"Same target filename {target_filename} but different content detected"
                 )
                 logger.warning(
-                    f"Existing checksum: {existing_fingerprint.sha256_checksum}, Current checksum: {current_checksum}"
+                    f"Existing checksum: {existing_fingerprint.sha256_checksum}, "
+                    f"Current checksum: {current_checksum}"
                 )
         else:
             logger.debug(f"No session duplicate found for {target_filename}")
@@ -151,12 +156,10 @@ class DuplicateDetector:
         Returns:
             RemoteFile if duplicate found, None otherwise
         """
-        logger.info(
-            f"Starting remote duplicate check for {filename} in {package_name} v{version}"
-        )
+        logger.info(f"Starting remote duplicate check for {filename} in {package_name} v{version}")
         logger.debug(f"Local checksum to compare: {checksum}")
 
-        def _check_remote_duplicate():
+        def _check_remote_duplicate() -> Optional[RemoteFile]:
             """Internal function to check remote duplicate."""
             project = self.gl.projects.get(self.project_id)
             packages = project.packages.list(package_name=package_name, get_all=True)
@@ -165,14 +168,10 @@ class DuplicateDetector:
             target_package = next((p for p in packages if p.version == version), None)
 
             if not target_package:
-                logger.debug(
-                    f"Package {package_name} v{version} not found - no remote duplicate"
-                )
+                logger.debug(f"Package {package_name} v{version} not found - no remote duplicate")
                 return None
 
-            logger.debug(
-                f"Found package {package_name} v{version} (ID: {target_package.id})"
-            )
+            logger.debug(f"Found package {package_name} v{version} (ID: {target_package.id})")
 
             # Get package files
             package_obj = project.packages.get(target_package.id)
@@ -184,14 +183,10 @@ class DuplicateDetector:
             matching_files = [f for f in package_files if f.file_name == filename]
 
             if not matching_files:
-                logger.debug(
-                    f"No files named {filename} found in remote package - no duplicate"
-                )
+                logger.debug(f"No files named {filename} found in remote package - no duplicate")
                 return None
 
-            logger.debug(
-                f"Found {len(matching_files)} file(s) with matching filename {filename}"
-            )
+            logger.debug(f"Found {len(matching_files)} file(s) with matching filename {filename}")
 
             # Check for checksum matches
             for pkg_file in matching_files:
@@ -202,17 +197,15 @@ class DuplicateDetector:
                         f"Comparing checksums - Remote: {remote_sha256}, Local: {checksum}"
                     )
                     if remote_sha256.lower() == checksum.lower():
-                        logger.info(
-                            f"Remote duplicate detected: {filename} (checksum: {checksum})"
-                        )
-                        logger.info(
-                            f"Remote file ID: {pkg_file.id}, Size: {getattr(pkg_file, 'size', 'unknown')}"
-                        )
+                        logger.info(f"Remote duplicate detected: {filename} (checksum: {checksum})")
+                        file_size = getattr(pkg_file, "size", "unknown")
+                        logger.info(f"Remote file ID: {pkg_file.id}, Size: {file_size}")
 
                         # Generate download URL
+                        base_url = self.gl.api_url.replace("/api/v4", "")
                         download_url = (
-                            f"{self.gl.api_url.replace('/api/v4', '')}/api/v4/projects/{self.project_id}/packages/generic/"
-                            f"{package_name}/{version}/{filename}"
+                            f"{base_url}/api/v4/projects/{self.project_id}"
+                            f"/packages/generic/{package_name}/{version}/{filename}"
                         )
 
                         return RemoteFile(
@@ -226,20 +219,17 @@ class DuplicateDetector:
                         )
                     else:
                         logger.debug(
-                            f"File {filename} exists but checksum differs (remote: {remote_sha256}, local: {checksum})"
+                            f"File {filename} exists but checksum differs "
+                            f"(remote: {remote_sha256}, local: {checksum})"
                         )
                 else:
                     # Handle incomplete metadata gracefully - use file size as fallback
                     logger.warning(
                         f"Remote checksum not available for {filename}, using file size comparison"
                     )
-                    logger.debug(
-                        f"Cannot verify duplicate without checksum for {filename}"
-                    )
+                    logger.debug(f"Cannot verify duplicate without checksum for {filename}")
 
-            logger.debug(
-                f"No matching checksums found for {filename} - no remote duplicate"
-            )
+            logger.debug(f"No matching checksums found for {filename} - no remote duplicate")
             return None
 
         try:
@@ -252,7 +242,7 @@ class DuplicateDetector:
             logger.warning(f"Proceeding without duplicate detection for {filename}")
             return None
 
-    def register_file(self, file_path: Path, target_filename: str, checksum: str):
+    def register_file(self, file_path: Path, target_filename: str, checksum: str) -> None:
         """
         Register file as processed in current session.
 
@@ -272,9 +262,5 @@ class DuplicateDetector:
         )
 
         self.session_registry[target_filename] = fingerprint
-        logger.info(
-            f"Registered file in session: {target_filename} (checksum: {checksum})"
-        )
-        logger.debug(
-            f"Session registry now contains {len(self.session_registry)} file(s)"
-        )
+        logger.info(f"Registered file in session: {target_filename} (checksum: {checksum})")
+        logger.debug(f"Session registry now contains {len(self.session_registry)} file(s)")

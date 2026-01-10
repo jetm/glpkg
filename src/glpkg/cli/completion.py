@@ -43,7 +43,11 @@ def generate_completion_script(shell: str) -> str:
             f"Unsupported shell: {shell}. Supported shells: {', '.join(SUPPORTED_SHELLS)}"
         )
 
-    return argcomplete.shellcode(["glpkg"], shell=shell)
+    # argcomplete.shellcode is not typed properly
+    result: str = argcomplete.shellcode(  # type: ignore[attr-defined,no-untyped-call]
+        ["glpkg"], shell=shell
+    )
+    return result
 
 
 def get_completion_path(shell: str) -> Path:
@@ -99,8 +103,7 @@ def install_completion(shell: str) -> None:
         ) from e
     except OSError as e:
         raise OSError(
-            f"Cannot create directory {completion_dir}: {e}. "
-            f"Please check the path and try again."
+            f"Cannot create directory {completion_dir}: {e}. Please check the path and try again."
         ) from e
 
     try:
@@ -113,8 +116,7 @@ def install_completion(shell: str) -> None:
         ) from e
     except OSError as e:
         raise OSError(
-            f"Cannot write to {completion_file}: {e}. "
-            f"Please check the path and try again."
+            f"Cannot write to {completion_file}: {e}. Please check the path and try again."
         ) from e
 
     logger.info(f"Installed {shell} completion to {completion_file}")

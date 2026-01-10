@@ -132,9 +132,8 @@ def setup_logging(args: argparse.Namespace) -> None:
         force=True,  # Reconfigure if already configured
     )
 
-    logger.debug(
-        f"Logging configured: level={verbosity}, stream={'stderr' if getattr(args, 'json_output', False) else 'stdout'}"
-    )
+    stream = "stderr" if getattr(args, "json_output", False) else "stdout"
+    logger.debug(f"Logging configured: level={verbosity}, stream={stream}")
 
 
 def validate_global_flags(args: argparse.Namespace) -> None:

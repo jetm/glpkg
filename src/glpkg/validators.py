@@ -33,7 +33,7 @@ DEFAULT_GITLAB_URL = "https://gitlab.com"
 
 def validate_filename(filename: str) -> None:
     """
-    Validate filename contains only ASCII characters and allowed patterns for GitLab Generic Package Registry.
+    Validate filename for GitLab Generic Package Registry compatibility.
 
     GitLab's API restricts filenames to ASCII-safe characters only. This function checks
     if the provided filename complies with these restrictions.
@@ -82,7 +82,8 @@ def validate_file_exists(file_path: Path) -> None:
 
     Examples:
         Valid: Path("package.tar.gz") (existing readable file)
-        Invalid: Path("nonexistent.bin"), Path("/some/directory"), Path("unreadable.txt") (no permissions)
+        Invalid: Path("nonexistent.bin"), Path("/some/directory"),
+            Path("unreadable.txt") (no permissions)
     """
     # Check if path exists
     if not file_path.exists():
@@ -97,9 +98,7 @@ def validate_file_exists(file_path: Path) -> None:
         with open(file_path, "rb"):
             pass
     except (PermissionError, OSError):
-        raise FileValidationError(
-            f"File is not readable: {file_path}. Check file permissions."
-        )
+        raise FileValidationError(f"File is not readable: {file_path}. Check file permissions.")
 
 
 def calculate_sha256(file_path: Path) -> str:
@@ -131,7 +130,9 @@ def calculate_sha256(file_path: Path) -> str:
             for chunk in iter(lambda: f.read(8192), b""):
                 sha256_hash.update(chunk)
     except (IOError, OSError) as e:
-        raise FileValidationError(f"Failed to read file for checksum calculation: {file_path}. Error: {e}")
+        raise FileValidationError(
+            f"Failed to read file for checksum calculation: {file_path}. Error: {e}"
+        )
 
     return sha256_hash.hexdigest()
 
@@ -173,8 +174,7 @@ def parse_file_mapping(mappings: list[str], files: list[str]) -> dict[str, str]:
     for mapping in mappings:
         if mapping.count(":") != 1:
             raise ConfigurationError(
-                f"Invalid file mapping format '{mapping}'. "
-                "Expected format: 'local.bin:remote.bin'"
+                f"Invalid file mapping format '{mapping}'. Expected format: 'local.bin:remote.bin'"
             )
         local_name, remote_name = mapping.split(":", 1)
         file_mappings[local_name] = remote_name
@@ -195,7 +195,7 @@ def collect_files(
     files: list[str] | None = None,
     directory: str | None = None,
     file_mappings: dict[str, str] | list[str] | None = None,
-) -> tuple[list[tuple[Path, str]], list[dict]]:
+) -> tuple[list[tuple[Path, str]], list[dict[str, str]]]:
     """
     Collect files to upload based on input mode (files list or directory).
 
@@ -237,7 +237,7 @@ def collect_files(
             >>> files_to_upload, errors = collect_files(directory="/path/to/uploads")
     """
     files_to_upload: list[tuple[Path, str]] = []
-    file_errors: list[dict] = []
+    file_errors: list[dict[str, str]] = []
 
     # Validate mutually exclusive inputs
     if files and directory:
@@ -245,9 +245,7 @@ def collect_files(
             "Cannot specify both 'files' and 'directory'. They are mutually exclusive."
         )
     if not files and not directory:
-        raise ConfigurationError(
-            "Either 'files' or 'directory' must be provided."
-        )
+        raise ConfigurationError("Either 'files' or 'directory' must be provided.")
 
     # Handle file_mappings type conversion
     if file_mappings is None:
@@ -613,8 +611,7 @@ def get_gitlab_token(cli_token: str | None = None) -> str:
 
     # No token found
     raise ConfigurationError(
-        "No GitLab token provided. "
-        "Set GITLAB_TOKEN environment variable or use --token argument"
+        "No GitLab token provided. Set GITLAB_TOKEN environment variable or use --token argument"
     )
 
 
@@ -703,7 +700,8 @@ def validate_dependencies() -> None:
             "• Check Python version: python --version\n"
             "• Check pip version: pip --version\n"
             "• Update pip: pip install --upgrade pip\n"
-            "• For corporate networks: pip install --trusted-host pypi.org --trusted-host pypi.python.org\n\n"
+            "• For corporate networks: pip install --trusted-host pypi.org "
+            "--trusted-host pypi.python.org\n\n"
             "For more help: https://packaging.python.org/tutorials/installing-packages/"
         )
 
@@ -769,7 +767,8 @@ def validate_gitlab_token(token: str, gitlab_url: str = DEFAULT_GITLAB_URL) -> N
             "TROUBLESHOOTING:\n"
             "• Check token format: should be 20+ characters\n"
             "• Verify token hasn't expired\n"
-            f"• Test token manually: curl -H 'PRIVATE-TOKEN: your-token' {gitlab_url}/api/v4/user\n\n"
+            f"• Test token manually: "
+            f"curl -H 'PRIVATE-TOKEN: your-token' {gitlab_url}/api/v4/user\n\n"
             "For more help: https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html"
         )
 
@@ -836,9 +835,7 @@ def validate_git_installation() -> None:
     logger.debug("Validating Git installation...")
 
     try:
-        result = subprocess.run(
-            ["git", "--version"], capture_output=True, text=True, timeout=10
-        )
+        result = subprocess.run(["git", "--version"], capture_output=True, text=True, timeout=10)
 
         if result.returncode != 0:
             raise ConfigurationError(
@@ -1190,8 +1187,7 @@ def validate_project_specification(
 
     else:
         raise ProjectResolutionError(
-            f"Unknown specification type: '{spec_type}'.\n"
-            "Expected 'url', 'path', or 'auto'."
+            f"Unknown specification type: '{spec_type}'.\nExpected 'url', 'path', or 'auto'."
         )
 
 
@@ -1270,9 +1266,7 @@ def validate_configuration(
             logger.error("Git installation validation failed")
             raise
         else:
-            logger.warning(
-                "Git installation validation failed (not required for this operation)"
-            )
+            logger.warning("Git installation validation failed (not required for this operation)")
             logger.debug(f"Git validation error: {e}")
 
     # 4. Validate Git repository access (only if Git operations are required)
