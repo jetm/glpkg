@@ -157,6 +157,62 @@ class TestIsTransientError:
         assert is_transient_error(error) is True
 
     @pytest.mark.timeout(60)
+    def test_gitlab_error_with_response_code_502(self):
+        """Test GitlabError with response_code=502 returns True."""
+        error = GitlabError("Bad Gateway")
+        error.response_code = 502
+        assert is_transient_error(error) is True
+
+    @pytest.mark.timeout(60)
+    def test_gitlab_error_with_response_code_503(self):
+        """Test GitlabError with response_code=503 returns True."""
+        error = GitlabError("Service Unavailable")
+        error.response_code = 503
+        assert is_transient_error(error) is True
+
+    @pytest.mark.timeout(60)
+    def test_gitlab_error_with_response_code_408(self):
+        """Test GitlabError with response_code=408 (Request Timeout) returns True."""
+        error = GitlabError("Request Timeout")
+        error.response_code = 408
+        assert is_transient_error(error) is True
+
+    @pytest.mark.timeout(60)
+    def test_gitlab_error_with_response_code_429(self):
+        """Test GitlabError with response_code=429 (Rate Limited) returns True."""
+        error = GitlabError("Too Many Requests")
+        error.response_code = 429
+        assert is_transient_error(error) is True
+
+    @pytest.mark.timeout(60)
+    def test_gitlab_error_with_response_code_403(self):
+        """Test GitlabError with response_code=403 returns False."""
+        error = GitlabError("Forbidden")
+        error.response_code = 403
+        assert is_transient_error(error) is False
+
+    @pytest.mark.timeout(60)
+    def test_gitlab_error_with_response_code_404(self):
+        """Test GitlabError with response_code=404 returns False."""
+        error = GitlabError("Not Found")
+        error.response_code = 404
+        assert is_transient_error(error) is False
+
+    @pytest.mark.timeout(60)
+    def test_gitlab_error_with_response_code_400(self):
+        """Test GitlabError with response_code=400 returns False."""
+        error = GitlabError("Bad Request")
+        error.response_code = 400
+        assert is_transient_error(error) is False
+
+    @pytest.mark.timeout(60)
+    def test_gitlab_error_with_response_code_422(self):
+        """Test GitlabError with response_code=422 (Unprocessable Entity) returns False."""
+        error = GitlabError("Unprocessable Entity")
+        error.response_code = 422
+        assert is_transient_error(error) is False
+
+    @pytest.mark.timeout(60)
     def test_timeout_error_is_transient(self):
         """Test TimeoutError returns True."""
         error = TimeoutError("Connection timed out")
@@ -523,6 +579,19 @@ class TestValidateUpload:
 
 class TestHandleDuplicate:
     """Test duplicate handling based on policy."""
+
+    @pytest.mark.timeout(60)
+    def test_handle_duplicate_unknown_policy_raises_error(
+        self, mock_upload_context, mock_file_path, sample_remote_file
+    ):
+        """Test unknown duplicate policy raises ValueError."""
+        # Set an invalid policy by bypassing the enum
+        mock_upload_context.config.duplicate_policy = "invalid_policy"
+
+        with pytest.raises(ValueError) as exc_info:
+            handle_duplicate(mock_upload_context, mock_file_path, sample_remote_file)
+
+        assert "Unknown duplicate policy" in str(exc_info.value)
 
     @pytest.mark.timeout(60)
     def test_handle_duplicate_skip_policy(
@@ -935,6 +1004,34 @@ class TestUploadFiles:
                 mock_upload_context, [(mock_file_path, "target.bin")]
             )
 
+        assert len(results) == 1
+        assert results[0].success is False
+        assert results[0].was_duplicate is True
+        assert results[0].duplicate_action == "error"
+
+    @pytest.mark.timeout(60)
+    def test_upload_files_remote_duplicate_error_policy_fail_fast(
+        self, mock_upload_context, mock_file_path, sample_remote_file, tmp_path
+    ):
+        """Test remote duplicate with ERROR policy and fail_fast enabled stops early."""
+        mock_upload_context.config.duplicate_policy = DuplicatePolicy.ERROR
+        mock_upload_context.config.fail_fast = True
+        mock_upload_context.detector.check_remote_duplicate.return_value = (
+            sample_remote_file
+        )
+
+        file2 = tmp_path / "file2.bin"
+        file2.write_bytes(b"content2")
+
+        with patch(
+            "glpkg.uploader.calculate_sha256", return_value="a" * 64
+        ):
+            results = upload_files(
+                mock_upload_context,
+                [(mock_file_path, "target1.bin"), (file2, "target2.bin")]
+            )
+
+        # With fail_fast, should stop after first error
         assert len(results) == 1
         assert results[0].success is False
         assert results[0].was_duplicate is True

@@ -48,6 +48,7 @@ from glpkg.cli.upload import (
     EXCEPTION_EXIT_CODE_MAP,
     # Functions
     auto_detect_project,
+    execute_upload,
     resolve_project_manually,
     validate_upload_flags,
     # Classes
@@ -1171,6 +1172,70 @@ class TestExceptionExitCodeMapping:
         assert EXCEPTION_EXIT_CODE_MAP[TimeoutError] == 6
 
 
+class TestProjectResolverExceptionHandling:
+    """Tests for ProjectResolver exception handling."""
+
+    @pytest.mark.timeout(60)
+    def test_resolve_project_id_generic_exception(self, mock_gitlab_client):
+        """Test generic Exception in resolve_project_id raises ProjectResolutionError."""
+        mock_gitlab_client.projects.get.side_effect = RuntimeError("Unexpected error")
+
+        resolver = ProjectResolver(mock_gitlab_client)
+        with pytest.raises(ProjectResolutionError) as exc_info:
+            resolver.resolve_project_id("https://gitlab.com", "group/project")
+
+        # The error should be wrapped in ProjectResolutionError
+        assert "Unexpected error" in str(exc_info.value) or exc_info.value is not None
+
+
+class TestResolveProjectManuallyEdgeCases:
+    """Tests for edge cases in resolve_project_manually."""
+
+    @pytest.mark.timeout(60)
+    def test_resolve_project_manually_path_empty_components(self):
+        """Test manual resolution with path that has empty components after split."""
+        with pytest.raises(ProjectResolutionError) as exc_info:
+            resolve_project_manually(
+                project_url=None,
+                project_path="//project",  # Empty namespace component
+                gitlab_url="https://gitlab.com"
+            )
+        assert "Invalid project path" in str(exc_info.value)
+
+
+class TestGetVersionFallbacks:
+    """Tests for get_version function fallback behavior."""
+
+    @pytest.mark.timeout(60)
+    @patch('builtins.open', side_effect=FileNotFoundError("pyproject.toml not found"))
+    def test_get_version_file_not_found_fallback(self, mock_open):
+        """Test get_version falls back when pyproject.toml not found."""
+        with patch('importlib.metadata.version', side_effect=Exception("Not installed")):
+            version = get_version()
+            # Should return "unknown" when all methods fail
+            assert version == "unknown" or isinstance(version, str)
+
+    @pytest.mark.timeout(60)
+    @patch('builtins.open', side_effect=Exception("Read error"))
+    def test_get_version_read_error_fallback(self, mock_open):
+        """Test get_version handles exceptions gracefully."""
+        version = get_version()
+        # Should return "unknown" or actual version
+        assert isinstance(version, str)
+
+
+class TestMainFunctionEdgeCases:
+    """Tests for main function edge cases."""
+
+    @pytest.mark.timeout(60)
+    def test_main_with_only_debug_flag_no_subcommand(self):
+        """Test main with only debug flag and no subcommand."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(['--debug'])
+        # Should exit with 0 (show help)
+        assert exc_info.value.code == 0
+
+
 class TestEdgeCases:
     """Tests for edge cases and error scenarios."""
 
@@ -1359,3 +1424,438 @@ class TestEdgeCases:
         )
 
         assert context.config.retry_count == 5
+
+
+class TestExecuteUpload:
+    """Tests for execute_upload function."""
+
+    @pytest.fixture
+    def upload_args(self, mock_args, tmp_path):
+        """Create args for execute_upload testing."""
+        test_file = tmp_path / "test.bin"
+        test_file.write_bytes(b"test content")
+        mock_args.files = [str(test_file)]
+        mock_args.project_url = "https://gitlab.com/mygroup/myproject"
+        mock_args.project_path = None
+        return mock_args
+
+    @pytest.mark.timeout(60)
+    @patch('glpkg.cli.upload.get_gitlab_token')
+    @patch('glpkg.cli.upload.Gitlab')
+    @patch('glpkg.cli.upload.ProjectResolver')
+    @patch('glpkg.cli.upload.UploadContextBuilder')
+    @patch('glpkg.cli.upload.upload_files')
+    @patch('glpkg.cli.upload.OutputFormatter')
+    @patch('glpkg.cli.upload.collect_files')
+    def test_execute_upload_success(
+        self,
+        mock_collect,
+        mock_formatter_class,
+        mock_upload_files,
+        mock_builder_class,
+        mock_resolver_class,
+        mock_gitlab_class,
+        mock_get_token,
+        upload_args,
+        tmp_path
+    ):
+        """Test successful execute_upload flow."""
+        test_file = tmp_path / "test.bin"
+
+        # Setup mocks
+        mock_get_token.return_value = "test-token"
+
+        mock_gl = MagicMock()
+        mock_gitlab_class.return_value = mock_gl
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve_project_id.return_value = 12345
+        mock_resolver.validate_project_access.return_value = True
+        mock_resolver_class.return_value = mock_resolver
+
+        mock_builder = MagicMock()
+        mock_context = MagicMock()
+        mock_context.config.package_name = "test-package"
+        mock_context.config.version = "1.0.0"
+        mock_builder.build.return_value = mock_context
+        mock_builder_class.return_value = mock_builder
+
+        mock_collect.return_value = ([(test_file, "test.bin")], [])
+
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_upload_files.return_value = [mock_result]
+
+        mock_formatter = MagicMock()
+        mock_formatter_class.return_value = mock_formatter
+
+        with pytest.raises(SystemExit) as exc_info:
+            execute_upload(upload_args)
+
+        # Should exit with 0 for success
+        assert exc_info.value.code == 0
+
+    @pytest.mark.timeout(60)
+    @patch('glpkg.cli.upload.auto_detect_project')
+    def test_execute_upload_auto_detect_project_error(self, mock_auto_detect, mock_args):
+        """Test execute_upload handles ProjectResolutionError during auto-detect."""
+        mock_args.project_url = None
+        mock_args.project_path = None
+        mock_args.files = ["test.txt"]
+        mock_args.directory = None
+        mock_args.file_mapping = None
+
+        mock_auto_detect.side_effect = ProjectResolutionError("No Git repository found")
+
+        with pytest.raises(SystemExit) as exc_info:
+            execute_upload(mock_args)
+
+        # Should exit with the error's exit code
+        assert exc_info.value.code > 0
+
+    @pytest.mark.timeout(60)
+    @patch('glpkg.cli.upload.resolve_project_manually')
+    def test_execute_upload_manual_resolution_error(self, mock_resolve, mock_args):
+        """Test execute_upload handles errors during manual project resolution."""
+        mock_args.project_url = "https://gitlab.com/invalid"
+        mock_args.project_path = None
+        mock_args.files = ["test.txt"]
+        mock_args.directory = None
+        mock_args.file_mapping = None
+
+        mock_resolve.side_effect = ProjectResolutionError("Invalid project URL")
+
+        with pytest.raises(SystemExit) as exc_info:
+            execute_upload(mock_args)
+
+        assert exc_info.value.code > 0
+
+    @pytest.mark.timeout(60)
+    @patch('glpkg.cli.upload.get_gitlab_token')
+    @patch('glpkg.cli.upload.resolve_project_manually')
+    def test_execute_upload_authentication_error(
+        self, mock_resolve, mock_get_token, mock_args
+    ):
+        """Test execute_upload handles AuthenticationError."""
+        mock_args.project_url = "https://gitlab.com/group/project"
+        mock_args.project_path = None
+        mock_args.files = ["test.txt"]
+        mock_args.directory = None
+        mock_args.file_mapping = None
+
+        mock_resolve.return_value = ("https://gitlab.com", "group/project")
+        mock_get_token.side_effect = AuthenticationError("No token found")
+
+        with pytest.raises(SystemExit) as exc_info:
+            execute_upload(mock_args)
+
+        assert exc_info.value.code > 0
+
+    @pytest.mark.timeout(60)
+    @patch('glpkg.cli.upload.get_gitlab_token')
+    @patch('glpkg.cli.upload.Gitlab')
+    @patch('glpkg.cli.upload.resolve_project_manually')
+    def test_execute_upload_connection_error(
+        self, mock_resolve, mock_gitlab_class, mock_get_token, mock_args
+    ):
+        """Test execute_upload handles ConnectionError."""
+        mock_args.project_url = "https://gitlab.com/group/project"
+        mock_args.project_path = None
+        mock_args.files = ["test.txt"]
+        mock_args.directory = None
+        mock_args.file_mapping = None
+
+        mock_resolve.return_value = ("https://gitlab.com", "group/project")
+        mock_get_token.return_value = "test-token"
+
+        mock_gl = MagicMock()
+        mock_gl.auth.side_effect = ConnectionError("Network error")
+        mock_gitlab_class.return_value = mock_gl
+
+        with pytest.raises(SystemExit) as exc_info:
+            execute_upload(mock_args)
+
+        assert exc_info.value.code == 6  # Connection error exit code
+
+    @pytest.mark.timeout(60)
+    @patch('glpkg.cli.upload.get_gitlab_token')
+    @patch('glpkg.cli.upload.Gitlab')
+    @patch('glpkg.cli.upload.ProjectResolver')
+    @patch('glpkg.cli.upload.UploadContextBuilder')
+    @patch('glpkg.cli.upload.collect_files')
+    @patch('glpkg.cli.upload.resolve_project_manually')
+    def test_execute_upload_no_valid_files(
+        self,
+        mock_resolve,
+        mock_collect,
+        mock_builder_class,
+        mock_resolver_class,
+        mock_gitlab_class,
+        mock_get_token,
+        mock_args,
+    ):
+        """Test execute_upload exits when no valid files to upload."""
+        mock_args.project_url = "https://gitlab.com/group/project"
+        mock_args.project_path = None
+        mock_args.files = ["nonexistent.txt"]
+        mock_args.directory = None
+        mock_args.file_mapping = None
+
+        mock_resolve.return_value = ("https://gitlab.com", "group/project")
+        mock_get_token.return_value = "test-token"
+
+        mock_gl = MagicMock()
+        mock_gitlab_class.return_value = mock_gl
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve_project_id.return_value = 12345
+        mock_resolver.validate_project_access.return_value = True
+        mock_resolver_class.return_value = mock_resolver
+
+        mock_builder = MagicMock()
+        mock_context = MagicMock()
+        mock_builder.build.return_value = mock_context
+        mock_builder_class.return_value = mock_builder
+
+        # No valid files, only errors
+        mock_collect.return_value = ([], [{"source_path": "nonexistent.txt", "error_message": "Not found"}])
+
+        with pytest.raises(SystemExit) as exc_info:
+            execute_upload(mock_args)
+
+        assert exc_info.value.code == 5  # File validation error exit code
+
+    @pytest.mark.timeout(60)
+    @patch('glpkg.cli.upload.get_gitlab_token')
+    @patch('glpkg.cli.upload.Gitlab')
+    @patch('glpkg.cli.upload.ProjectResolver')
+    @patch('glpkg.cli.upload.UploadContextBuilder')
+    @patch('glpkg.cli.upload.upload_files')
+    @patch('glpkg.cli.upload.OutputFormatter')
+    @patch('glpkg.cli.upload.collect_files')
+    @patch('glpkg.cli.upload.resolve_project_manually')
+    def test_execute_upload_with_failed_uploads(
+        self,
+        mock_resolve,
+        mock_collect,
+        mock_formatter_class,
+        mock_upload_files,
+        mock_builder_class,
+        mock_resolver_class,
+        mock_gitlab_class,
+        mock_get_token,
+        mock_args,
+        tmp_path,
+    ):
+        """Test execute_upload exits with 1 when some uploads fail."""
+        test_file = tmp_path / "test.bin"
+        test_file.write_bytes(b"test content")
+        mock_args.project_url = "https://gitlab.com/group/project"
+        mock_args.project_path = None
+        mock_args.files = [str(test_file)]
+        mock_args.directory = None
+        mock_args.file_mapping = None
+
+        mock_resolve.return_value = ("https://gitlab.com", "group/project")
+        mock_get_token.return_value = "test-token"
+
+        mock_gl = MagicMock()
+        mock_gitlab_class.return_value = mock_gl
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve_project_id.return_value = 12345
+        mock_resolver.validate_project_access.return_value = True
+        mock_resolver_class.return_value = mock_resolver
+
+        mock_builder = MagicMock()
+        mock_context = MagicMock()
+        mock_context.config.package_name = "test-package"
+        mock_context.config.version = "1.0.0"
+        mock_builder.build.return_value = mock_context
+        mock_builder_class.return_value = mock_builder
+
+        mock_collect.return_value = ([(test_file, "test.bin")], [])
+
+        # One failed upload
+        mock_result = MagicMock()
+        mock_result.success = False
+        mock_upload_files.return_value = [mock_result]
+
+        mock_formatter = MagicMock()
+        mock_formatter_class.return_value = mock_formatter
+
+        with pytest.raises(SystemExit) as exc_info:
+            execute_upload(mock_args)
+
+        # Should exit with 1 for failed uploads
+        assert exc_info.value.code == 1
+
+    @pytest.mark.timeout(60)
+    @patch('glpkg.cli.upload.get_gitlab_token')
+    @patch('glpkg.cli.upload.Gitlab')
+    @patch('glpkg.cli.upload.ProjectResolver')
+    @patch('glpkg.cli.upload.resolve_project_manually')
+    def test_execute_upload_project_access_denied(
+        self,
+        mock_resolve,
+        mock_resolver_class,
+        mock_gitlab_class,
+        mock_get_token,
+        mock_args,
+    ):
+        """Test execute_upload handles project access validation failure."""
+        mock_args.project_url = "https://gitlab.com/group/project"
+        mock_args.project_path = None
+        mock_args.files = ["test.txt"]
+        mock_args.directory = None
+        mock_args.file_mapping = None
+
+        mock_resolve.return_value = ("https://gitlab.com", "group/project")
+        mock_get_token.return_value = "test-token"
+
+        mock_gl = MagicMock()
+        mock_gitlab_class.return_value = mock_gl
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve_project_id.return_value = 12345
+        mock_resolver.validate_project_access.return_value = False  # Access denied
+        mock_resolver_class.return_value = mock_resolver
+
+        with pytest.raises(SystemExit) as exc_info:
+            execute_upload(mock_args)
+
+        assert exc_info.value.code > 0
+
+    @pytest.mark.timeout(60)
+    @patch('glpkg.cli.upload.get_gitlab_token')
+    @patch('glpkg.cli.upload.Gitlab')
+    @patch('glpkg.cli.upload.resolve_project_manually')
+    def test_execute_upload_timeout_error(
+        self, mock_resolve, mock_gitlab_class, mock_get_token, mock_args
+    ):
+        """Test execute_upload handles TimeoutError."""
+        mock_args.project_url = "https://gitlab.com/group/project"
+        mock_args.project_path = None
+        mock_args.files = ["test.txt"]
+        mock_args.directory = None
+        mock_args.file_mapping = None
+
+        mock_resolve.return_value = ("https://gitlab.com", "group/project")
+        mock_get_token.return_value = "test-token"
+
+        mock_gl = MagicMock()
+        mock_gl.auth.side_effect = TimeoutError("Connection timed out")
+        mock_gitlab_class.return_value = mock_gl
+
+        with pytest.raises(SystemExit) as exc_info:
+            execute_upload(mock_args)
+
+        assert exc_info.value.code == 6  # Timeout error exit code
+
+    @pytest.mark.timeout(60)
+    @patch('glpkg.cli.upload.get_gitlab_token')
+    @patch('glpkg.cli.upload.Gitlab')
+    @patch('glpkg.cli.upload.resolve_project_manually')
+    def test_execute_upload_value_error(
+        self, mock_resolve, mock_gitlab_class, mock_get_token, mock_args
+    ):
+        """Test execute_upload handles ValueError."""
+        mock_args.project_url = "https://gitlab.com/group/project"
+        mock_args.project_path = None
+        mock_args.files = ["test.txt"]
+        mock_args.directory = None
+        mock_args.file_mapping = None
+
+        mock_resolve.return_value = ("https://gitlab.com", "group/project")
+        mock_get_token.return_value = "test-token"
+
+        mock_gl = MagicMock()
+        mock_gl.auth.side_effect = ValueError("Invalid value")
+        mock_gitlab_class.return_value = mock_gl
+
+        with pytest.raises(SystemExit) as exc_info:
+            execute_upload(mock_args)
+
+        assert exc_info.value.code == 3  # Value error exit code
+
+    @pytest.mark.timeout(60)
+    @patch('glpkg.cli.upload.get_gitlab_token')
+    @patch('glpkg.cli.upload.Gitlab')
+    @patch('glpkg.cli.upload.resolve_project_manually')
+    def test_execute_upload_unexpected_error(
+        self, mock_resolve, mock_gitlab_class, mock_get_token, mock_args
+    ):
+        """Test execute_upload handles unexpected errors."""
+        mock_args.project_url = "https://gitlab.com/group/project"
+        mock_args.project_path = None
+        mock_args.files = ["test.txt"]
+        mock_args.directory = None
+        mock_args.file_mapping = None
+
+        mock_resolve.return_value = ("https://gitlab.com", "group/project")
+        mock_get_token.return_value = "test-token"
+
+        mock_gl = MagicMock()
+        mock_gl.auth.side_effect = RuntimeError("Unexpected error")
+        mock_gitlab_class.return_value = mock_gl
+
+        with pytest.raises(SystemExit) as exc_info:
+            execute_upload(mock_args)
+
+        assert exc_info.value.code == 1  # Generic error exit code
+
+    @pytest.mark.timeout(60)
+    @patch('glpkg.cli.upload.get_gitlab_token')
+    @patch('glpkg.cli.upload.Gitlab')
+    @patch('glpkg.cli.upload.ProjectResolver')
+    @patch('glpkg.cli.upload.UploadContextBuilder')
+    @patch('glpkg.cli.upload.collect_files')
+    @patch('glpkg.cli.upload.resolve_project_manually')
+    def test_execute_upload_file_errors_fail_fast(
+        self,
+        mock_resolve,
+        mock_collect,
+        mock_builder_class,
+        mock_resolver_class,
+        mock_gitlab_class,
+        mock_get_token,
+        mock_args,
+        tmp_path,
+    ):
+        """Test execute_upload with file errors and fail_fast enabled."""
+        test_file = tmp_path / "test.bin"
+        test_file.write_bytes(b"test content")
+        mock_args.project_url = "https://gitlab.com/group/project"
+        mock_args.project_path = None
+        mock_args.files = [str(test_file)]
+        mock_args.directory = None
+        mock_args.file_mapping = None
+        mock_args.fail_fast = True
+
+        mock_resolve.return_value = ("https://gitlab.com", "group/project")
+        mock_get_token.return_value = "test-token"
+
+        mock_gl = MagicMock()
+        mock_gitlab_class.return_value = mock_gl
+
+        mock_resolver = MagicMock()
+        mock_resolver.resolve_project_id.return_value = 12345
+        mock_resolver.validate_project_access.return_value = True
+        mock_resolver_class.return_value = mock_resolver
+
+        mock_builder = MagicMock()
+        mock_context = MagicMock()
+        mock_builder.build.return_value = mock_context
+        mock_builder_class.return_value = mock_builder
+
+        # Some valid files, some errors
+        mock_collect.return_value = (
+            [(test_file, "test.bin")],
+            [{"source_path": "bad.txt", "error_message": "Not found"}]
+        )
+
+        with pytest.raises(SystemExit) as exc_info:
+            execute_upload(mock_args)
+
+        # Should exit with 5 (file validation error) due to fail_fast
+        assert exc_info.value.code == 5

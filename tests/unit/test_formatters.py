@@ -388,6 +388,25 @@ class TestTerminalDetection:
                 assert detect_color_support() is True
 
     @pytest.mark.timeout(60)
+    def test_detect_color_support_windows_conemu_on(self, clean_env):
+        """Test detect_color_support returns True on Windows with ConEmuANSI=ON."""
+        os.environ["ConEmuANSI"] = "ON"
+
+        with patch("glpkg.formatters.detect_tty", return_value=True):
+            with patch.object(sys, "platform", "win32"):
+                assert detect_color_support() is True
+
+    @pytest.mark.timeout(60)
+    def test_detect_color_support_windows_conemu_off(self, clean_env):
+        """Test detect_color_support returns False on Windows with ConEmuANSI not ON."""
+        os.environ["ConEmuANSI"] = "OFF"
+
+        with patch("glpkg.formatters.detect_tty", return_value=True):
+            with patch.object(sys, "platform", "win32"):
+                # Should return False as only "ON" enables color support
+                assert detect_color_support() is False
+
+    @pytest.mark.timeout(60)
     def test_detect_color_support_precedence(self, clean_env):
         """Test that NO_COLOR takes precedence over FORCE_COLOR."""
         os.environ["NO_COLOR"] = "1"
@@ -443,6 +462,20 @@ class TestTerminalDetection:
 
         with patch.object(sys, "stdout", mock_stdout):
             assert detect_unicode_support() is False
+
+    @pytest.mark.timeout(60)
+    def test_detect_unicode_support_encoding_raises_exception(self, clean_env):
+        """Test detect_unicode_support handles exception when accessing encoding."""
+        mock_stdout = Mock()
+        # Make encoding access raise an exception
+        type(mock_stdout).encoding = property(lambda self: (_ for _ in ()).throw(AttributeError("No encoding")))
+        mock_stdout.isatty.return_value = True
+
+        with patch.object(sys, "stdout", mock_stdout):
+            with patch("glpkg.formatters.detect_tty", return_value=True):
+                # Should return False as encoding check failed
+                result = detect_unicode_support()
+                assert result is False
 
 
 class TestOutputFormatterInit:
@@ -636,6 +669,36 @@ class TestRichOutputFormatting:
         assert "Skipped duplicates:" in output
         assert "Failed uploads:" in output
         assert "Total processed:" in output
+
+    @pytest.mark.timeout(60)
+    def test_format_rich_output_failed_with_duplicate_info(self, mock_rich_console):
+        """Test rich output displays failed uploads with duplicate metadata."""
+        config = create_upload_config(plain_output=False)
+
+        with patch("glpkg.formatters.detect_tty", return_value=True):
+            formatter = OutputFormatter(config)
+
+        results = [
+            create_upload_result(
+                source_path="/path/to/file.txt",
+                target_filename="file.txt",
+                success=False,
+                result="Duplicate file detected",
+                was_duplicate=True,
+                duplicate_action="error",
+                existing_url="https://gitlab.com/existing/file.txt",
+            )
+        ]
+
+        captured = io.StringIO()
+        formatter.console = MockConsole(file=captured, force_terminal=True)
+
+        formatter._format_rich_output(results, "test-package", "1.0.0")
+
+        output = captured.getvalue()
+        assert "Failed Uploads" in output
+        assert "Duplicate Action:" in output or "error" in output
+        assert "Existing URL:" in output or "existing" in output.lower()
 
     @pytest.mark.timeout(60)
     def test_format_rich_output_empty_results(self, mock_rich_console):
@@ -1087,6 +1150,34 @@ class TestPlainTextOutputFormatting:
         output = captured.getvalue()
         assert "Action: Replaced existing duplicate" in output
         assert "Previous URL:" in output
+
+    @pytest.mark.timeout(60)
+    def test_format_plain_output_failed_with_duplicate_info(self, mock_rich_console):
+        """Test plain output displays failed uploads with duplicate metadata."""
+        config = create_upload_config(plain_output=True)
+        formatter = OutputFormatter(config)
+
+        results = [
+            create_upload_result(
+                source_path="/path/to/file.txt",
+                target_filename="file.txt",
+                success=False,
+                result="Duplicate file detected",
+                was_duplicate=True,
+                duplicate_action="error",
+                existing_url="https://gitlab.com/existing/file.txt",
+            )
+        ]
+
+        with capture_stdout() as captured:
+            formatter._format_plain_output(results, "test-package", "1.0.0")
+
+        output = captured.getvalue()
+        assert "[FAIL] Failed Uploads" in output
+        assert "Duplicate Action:" in output
+        assert "error" in output
+        assert "Existing URL:" in output
+        assert "existing" in output
 
 
 class TestErrorFormatting:
