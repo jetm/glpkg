@@ -79,7 +79,10 @@ import argcomplete
 import git
 from gitlab import Gitlab
 from gitlab.exceptions import GitlabAuthenticationError, GitlabGetError
+from rich.console import Console
+from rich.logging import RichHandler
 
+from gitlab_pkg_upload.duplicate_detector import DuplicateDetector
 from gitlab_pkg_upload.models import (
     AuthenticationError,
     ConfigurationError,
@@ -87,6 +90,8 @@ from gitlab_pkg_upload.models import (
     GitRemoteInfo,
     ProjectInfo,
     ProjectResolutionError,
+    UploadConfig,
+    UploadContext,
     enhance_error_message,
 )
 from gitlab_pkg_upload.validators import (
@@ -101,6 +106,70 @@ if TYPE_CHECKING:
 
 # Module-level logger
 logger = logging.getLogger(__name__)
+
+
+def determine_verbosity(args: argparse.Namespace) -> str:
+    """Determine verbosity level from parsed arguments.
+
+    Checks verbosity flags in priority order: debug > verbose > quiet > normal.
+
+    Args:
+        args: Parsed argument namespace from argparse.
+
+    Returns:
+        One of: 'debug', 'verbose', 'quiet', or 'normal'.
+    """
+    if args.debug:
+        return "debug"
+    elif args.verbose:
+        return "verbose"
+    elif args.quiet:
+        return "quiet"
+    else:
+        return "normal"
+
+
+def setup_logging(args: argparse.Namespace) -> None:
+    """Configure logging based on verbosity flags.
+
+    Sets up Python's root logger with RichHandler for enhanced console output.
+    When --json-output is enabled, logs go to stderr to keep stdout clean for JSON.
+
+    Args:
+        args: Parsed argument namespace containing verbosity flags.
+    """
+    verbosity = determine_verbosity(args)
+
+    # Determine log level based on verbosity
+    log_levels = {
+        "debug": logging.DEBUG,
+        "verbose": logging.INFO,
+        "quiet": logging.WARNING,
+        "normal": logging.INFO,
+    }
+    level = log_levels.get(verbosity, logging.INFO)
+
+    # Use stderr when json_output is enabled to keep stdout clean for JSON
+    stream = sys.stderr if args.json_output else sys.stdout
+
+    # Configure RichHandler with appropriate settings
+    rich_handler = RichHandler(
+        console=Console(file=stream),
+        show_time=True,
+        show_path=False,
+        markup=True,
+        rich_tracebacks=True,
+    )
+
+    # Configure root logger
+    logging.basicConfig(
+        level=level,
+        format="%(message)s",
+        handlers=[rich_handler],
+        force=True,  # Reconfigure if already configured
+    )
+
+    logger.debug(f"Logging configured: level={verbosity}, stream={'stderr' if args.json_output else 'stdout'}")
 
 
 def create_argument_parser() -> argparse.ArgumentParser:
@@ -852,6 +921,94 @@ class ProjectResolver:
             return False
 
 
+class UploadContextBuilder:
+    """Builder for safely initializing upload context with all required components.
+
+    This class follows the builder pattern to create an UploadContext with
+    all dependencies properly initialized and validated.
+    """
+
+    def __init__(self) -> None:
+        """Initialize UploadContextBuilder."""
+        pass
+
+    def build(
+        self,
+        args: argparse.Namespace,
+        gl: Gitlab,
+        project_id: int,
+        project_path: str,
+        gitlab_url: str,
+        token: str,
+    ) -> UploadContext:
+        """Build an UploadContext from parsed arguments and resolved project info.
+
+        Args:
+            args: Parsed argument namespace from argparse.
+            gl: Authenticated GitLab client.
+            project_id: Resolved GitLab project ID.
+            project_path: Resolved project path (namespace/project).
+            gitlab_url: GitLab instance URL.
+            token: Resolved GitLab API token (from CLI or environment).
+
+        Returns:
+            Fully initialized UploadContext ready for upload operations.
+
+        Raises:
+            ConfigurationError: If context building fails due to configuration issues.
+        """
+        try:
+            # Determine verbosity level
+            verbosity = determine_verbosity(args)
+
+            # Create UploadConfig from parsed arguments
+            config = UploadConfig(
+                package_name=args.package_name,
+                version=args.package_version,
+                duplicate_policy=args.duplicate_policy,
+                retry_count=args.retry,
+                verbosity=verbosity,
+                dry_run=args.dry_run,
+                fail_fast=args.fail_fast,
+                json_output=args.json_output,
+                plain_output=args.plain,
+                gitlab_url=gitlab_url,
+                token=token,  # Resolved token (from CLI or environment)
+            )
+
+            logger.debug(f"Created UploadConfig: package={config.package_name}, version={config.version}")
+
+            # Initialize DuplicateDetector
+            detector = DuplicateDetector(gl, project_id)
+            logger.debug(f"Initialized DuplicateDetector for project ID {project_id}")
+
+            # Create and return UploadContext
+            context = UploadContext(
+                gl=gl,
+                config=config,
+                detector=detector,
+                project_id=project_id,
+                project_path=project_path,
+            )
+
+            logger.info(f"Built upload context for {project_path} (ID: {project_id})")
+            logger.debug(
+                f"Context details: package={config.package_name}, version={config.version}, "
+                f"duplicate_policy={config.duplicate_policy.value}, dry_run={config.dry_run}"
+            )
+
+            return context
+
+        except Exception as e:
+            raise ConfigurationError(
+                f"Failed to build upload context: {e}\n\n"
+                "SOLUTION:\n"
+                "  • Verify all required arguments are provided\n"
+                "  • Check that project ID is valid\n"
+                "  • Ensure GitLab client is properly authenticated"
+            )
+
+
 def auto_detect_project() -> tuple[str, str]:
     """Auto-detect GitLab project from git repository.
 
@@ -983,6 +1140,9 @@ def main(argv: list[str] | None = None) -> None:
     # Note: --version flag is handled automatically by argparse via action="version"
     args = parse_arguments(argv)
 
+    # Configure logging based on verbosity flags
+    setup_logging(args)
+
     # Project resolution
     try:
         if args.project_url or args.project_path:
@@ -1013,53 +1173,60 @@ def main(argv: list[str] | None = None) -> None:
             )
 
         # Log success
-        if args.verbose or args.debug:
-            print(f"Successfully resolved project: {project_path} (ID: {project_id})")
+        logger.info(f"Successfully resolved project: {project_path} (ID: {project_id})")
+
+        # Phase 3 - Context building
+        builder = UploadContextBuilder()
+        context = builder.build(
+            args=args,
+            gl=gl,
+            project_id=project_id,
+            project_path=project_path,
+            gitlab_url=gitlab_url,
+            token=token,
+        )
+        logger.debug(f"Upload context built successfully for {project_path}")
 
     except ProjectResolutionError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error(f"Project resolution failed: {e}")
         sys.exit(4)
     except AuthenticationError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error(f"Authentication failed: {e}")
         sys.exit(2)
     except ConfigurationError as e:
-        print(f"Error: {e}", file=sys.stderr)
+        logger.error(f"Configuration error: {e}")
         sys.exit(3)
     except Exception as e:
-        print(f"Unexpected error during project resolution: {e}", file=sys.stderr)
+        logger.error(f"Unexpected error during project resolution: {e}")
         sys.exit(1)
-
-    # TODO: Phase 3 - Context building
-    # - Build UploadConfig from parsed arguments
-    # - Initialize DuplicateDetector
-    # - Build UploadContext
 
     # TODO: Phase 4 - Upload orchestration
     # - Collect files to upload
     # - Execute uploads with retry handling
     # - Format and display results
 
-    # Placeholder: print parsed configuration (for development/testing)
+    # Debug output: print parsed configuration (for development/testing)
     if args.debug:
-        print("Parsed arguments:", file=sys.stderr)
-        print(f"  package_name: {args.package_name}", file=sys.stderr)
-        print(f"  package_version: {args.package_version}", file=sys.stderr)
-        print(f"  files: {args.files}", file=sys.stderr)
-        print(f"  directory: {args.directory}", file=sys.stderr)
-        print(f"  project_url: {args.project_url}", file=sys.stderr)
-        print(f"  project_path: {args.project_path}", file=sys.stderr)
-        print(f"  gitlab_url: {gitlab_url}", file=sys.stderr)
-        print(f"  project_id: {project_id}", file=sys.stderr)
-        print(f"  duplicate_policy: {args.duplicate_policy}", file=sys.stderr)
-        print(f"  file_mapping: {args.file_mapping}", file=sys.stderr)
-        print(f"  verbose: {args.verbose}", file=sys.stderr)
-        print(f"  quiet: {args.quiet}", file=sys.stderr)
-        print(f"  debug: {args.debug}", file=sys.stderr)
-        print(f"  dry_run: {args.dry_run}", file=sys.stderr)
-        print(f"  fail_fast: {args.fail_fast}", file=sys.stderr)
-        print(f"  retry: {args.retry}", file=sys.stderr)
-        print(f"  json_output: {args.json_output}", file=sys.stderr)
-        print(f"  plain: {args.plain}", file=sys.stderr)
+        logger.debug("Parsed arguments:")
+        logger.debug(f"  package_name: {args.package_name}")
+        logger.debug(f"  package_version: {args.package_version}")
+        logger.debug(f"  files: {args.files}")
+        logger.debug(f"  directory: {args.directory}")
+        logger.debug(f"  project_url: {args.project_url}")
+        logger.debug(f"  project_path: {args.project_path}")
+        logger.debug(f"  gitlab_url: {gitlab_url}")
+        logger.debug(f"  project_id: {project_id}")
+        logger.debug(f"  duplicate_policy: {args.duplicate_policy}")
+        logger.debug(f"  file_mapping: {args.file_mapping}")
+        logger.debug(f"  verbose: {args.verbose}")
+        logger.debug(f"  quiet: {args.quiet}")
+        logger.debug(f"  debug: {args.debug}")
+        logger.debug(f"  dry_run: {args.dry_run}")
+        logger.debug(f"  fail_fast: {args.fail_fast}")
+        logger.debug(f"  retry: {args.retry}")
+        logger.debug(f"  json_output: {args.json_output}")
+        logger.debug(f"  plain: {args.plain}")
+        logger.debug(f"  context: {context}")
 
 
 if __name__ == "__main__":
