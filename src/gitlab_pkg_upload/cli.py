@@ -87,6 +87,7 @@ from gitlab_pkg_upload.models import (
     AuthenticationError,
     ConfigurationError,
     DuplicatePolicy,
+    GitLabUploadError,
     GitRemoteInfo,
     ProjectInfo,
     ProjectResolutionError,
@@ -104,8 +105,24 @@ from gitlab_pkg_upload.validators import (
 if TYPE_CHECKING:
     pass
 
+from gitlab_pkg_upload.formatters import OutputFormatter
+from gitlab_pkg_upload.uploader import upload_files
+from gitlab_pkg_upload.validators import collect_files
+
 # Module-level logger
 logger = logging.getLogger(__name__)
+
+# Exception exit code mapping for standard Python exceptions
+# Custom exceptions (GitLabUploadError subclasses) use their exit_code attribute.
+# Standard Python exceptions use this mapping table.
+# Unknown exceptions default to exit code 1.
+EXCEPTION_EXIT_CODE_MAP: dict[type, int] = {
+    FileNotFoundError: 5,  # File validation failure
+    PermissionError: 5,  # File validation failure
+    ValueError: 3,  # Configuration error
+    ConnectionError: 6,  # Network error
+    TimeoutError: 6,  # Network error
+}
 
 
 def determine_verbosity(args: argparse.Namespace) -> str:
@@ -1187,46 +1204,102 @@ def main(argv: list[str] | None = None) -> None:
         )
         logger.debug(f"Upload context built successfully for {project_path}")
 
-    except ProjectResolutionError as e:
-        logger.error(f"Project resolution failed: {e}")
-        sys.exit(4)
     except AuthenticationError as e:
         logger.error(f"Authentication failed: {e}")
-        sys.exit(2)
+        sys.exit(e.exit_code)
     except ConfigurationError as e:
         logger.error(f"Configuration error: {e}")
-        sys.exit(3)
+        sys.exit(e.exit_code)
+    except ProjectResolutionError as e:
+        logger.error(f"Project resolution failed: {e}")
+        sys.exit(e.exit_code)
+    except GitLabUploadError as e:
+        logger.error(f"GitLab error: {e}")
+        sys.exit(e.exit_code)
+    except FileNotFoundError as e:
+        logger.error(f"File not found: {e}")
+        sys.exit(EXCEPTION_EXIT_CODE_MAP.get(FileNotFoundError, 1))
+    except PermissionError as e:
+        logger.error(f"Permission denied: {e}")
+        sys.exit(EXCEPTION_EXIT_CODE_MAP.get(PermissionError, 1))
+    except ValueError as e:
+        logger.error(f"Value error: {e}")
+        sys.exit(EXCEPTION_EXIT_CODE_MAP.get(ValueError, 1))
+    except ConnectionError as e:
+        logger.error(f"Connection error: {e}")
+        sys.exit(EXCEPTION_EXIT_CODE_MAP.get(ConnectionError, 1))
+    except TimeoutError as e:
+        logger.error(f"Timeout error: {e}")
+        sys.exit(EXCEPTION_EXIT_CODE_MAP.get(TimeoutError, 1))
     except Exception as e:
         logger.error(f"Unexpected error during project resolution: {e}")
         sys.exit(1)
 
-    # TODO: Phase 4 - Upload orchestration
-    # - Collect files to upload
-    # - Execute uploads with retry handling
-    # - Format and display results
+    # Phase 4 - Upload orchestration
+    try:
+        # Step 1: Collect files to upload
+        files_to_upload, file_errors = collect_files(
+            files=args.files,
+            directory=args.directory,
+            file_mappings=args.file_mapping,
+        )
 
-    # Debug output: print parsed configuration (for development/testing)
-    if args.debug:
-        logger.debug("Parsed arguments:")
-        logger.debug(f"  package_name: {args.package_name}")
-        logger.debug(f"  package_version: {args.package_version}")
-        logger.debug(f"  files: {args.files}")
-        logger.debug(f"  directory: {args.directory}")
-        logger.debug(f"  project_url: {args.project_url}")
-        logger.debug(f"  project_path: {args.project_path}")
-        logger.debug(f"  gitlab_url: {gitlab_url}")
-        logger.debug(f"  project_id: {project_id}")
-        logger.debug(f"  duplicate_policy: {args.duplicate_policy}")
-        logger.debug(f"  file_mapping: {args.file_mapping}")
-        logger.debug(f"  verbose: {args.verbose}")
-        logger.debug(f"  quiet: {args.quiet}")
-        logger.debug(f"  debug: {args.debug}")
-        logger.debug(f"  dry_run: {args.dry_run}")
-        logger.debug(f"  fail_fast: {args.fail_fast}")
-        logger.debug(f"  retry: {args.retry}")
-        logger.debug(f"  json_output: {args.json_output}")
-        logger.debug(f"  plain: {args.plain}")
-        logger.debug(f"  context: {context}")
+        # Handle file collection errors
+        if file_errors:
+            for error in file_errors:
+                logger.error(
+                    f"File validation error for {error['source_path']}: {error['error_message']}"
+                )
+            if args.fail_fast:
+                logger.error("Fail-fast enabled, stopping due to file validation errors")
+                sys.exit(5)
+
+        # Check if we have any valid files to upload
+        if not files_to_upload:
+            logger.error("No valid files to upload")
+            sys.exit(5)
+
+        logger.info(f"Collected {len(files_to_upload)} files to upload")
+
+        # Step 2: Execute uploads
+        results = upload_files(context, files_to_upload)
+
+        # Step 3: Format and display results
+        formatter = OutputFormatter(context.config)
+        formatter.format_output(
+            results,
+            context.config.package_name,
+            context.config.version,
+        )
+
+        # Step 4: Determine exit code based on results
+        failed_count = sum(1 for r in results if not r.success)
+        if failed_count > 0:
+            sys.exit(1)
+        else:
+            sys.exit(0)
+
+    except FileNotFoundError as e:
+        logger.error(f"File not found: {e}")
+        sys.exit(EXCEPTION_EXIT_CODE_MAP.get(FileNotFoundError, 1))
+    except PermissionError as e:
+        logger.error(f"Permission denied: {e}")
+        sys.exit(EXCEPTION_EXIT_CODE_MAP.get(PermissionError, 1))
+    except ValueError as e:
+        logger.error(f"Value error: {e}")
+        sys.exit(EXCEPTION_EXIT_CODE_MAP.get(ValueError, 1))
+    except ConnectionError as e:
+        logger.error(f"Connection error: {e}")
+        sys.exit(EXCEPTION_EXIT_CODE_MAP.get(ConnectionError, 1))
+    except TimeoutError as e:
+        logger.error(f"Timeout error: {e}")
+        sys.exit(EXCEPTION_EXIT_CODE_MAP.get(TimeoutError, 1))
+    except GitLabUploadError as e:
+        logger.error(f"Upload error: {e}")
+        sys.exit(e.exit_code)
+    except Exception as e:
+        logger.error(f"Unexpected error during upload: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
