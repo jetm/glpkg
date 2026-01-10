@@ -1,6 +1,9 @@
 # GitHub Workflows Documentation
 
-This document provides comprehensive documentation for all GitHub Actions workflows used in the glpkg project. These workflows form the CI/CD pipeline that ensures code quality, runs tests, validates documentation, and handles package publishing.
+This document provides comprehensive documentation for all GitHub Actions
+workflows used in the glpkg project. These workflows form the CI/CD pipeline
+that ensures code quality, runs tests, validates documentation, and handles
+package publishing.
 
 ## Table of Contents
 
@@ -16,143 +19,142 @@ This document provides comprehensive documentation for all GitHub Actions workfl
 
 **File:** `.github/workflows/test.yml`
 
-### Purpose
+Runs unit and integration tests across Python 3.11-3.13 to ensure code
+correctness and maintain test coverage standards.
 
-Runs unit and integration tests across Python 3.11-3.13 to ensure code correctness and maintain test coverage standards.
-
-### Triggers
+**Triggers:**
 
 - Push to any branch
 - Pull requests to `main` or `master`
 - Manual dispatch via `workflow_dispatch`
 
-### Key Features
+**Key Features:**
 
-- **Matrix testing** across Python versions 3.11, 3.12, and 3.13
-- **Unit tests** with pytest-cov providing coverage reporting
-- **Coverage thresholds**: 95% warning level, 90% fail threshold
-- **Integration tests** run conditionally when `GITLAB_TOKEN` and `GITLAB_REPO` secrets are configured
-- **Coverage report upload** for Python 3.11 runs
+- Matrix testing across Python versions 3.11, 3.12, and 3.13
+- Unit tests with pytest-cov providing coverage reporting
+- Coverage thresholds: 95% warning level, 90% fail threshold
+- Integration tests run conditionally when secrets are configured
+- Coverage report upload for Python 3.11 runs
 - Uses `uv` for fast, reliable dependency management
 
-### Required Secrets
+**Secrets:**
 
-| Secret | Required | Description |
-|--------|----------|-------------|
-| `GITLAB_TOKEN` | Optional | GitLab API token for integration tests |
-| `GITLAB_REPO` | Optional | GitLab repository path for integration tests |
+| Secret         | Required | Description                              |
+| -------------- | -------- | ---------------------------------------- |
+| `GITLAB_TOKEN` | Optional | GitLab API token for integration tests   |
+| `GITLAB_REPO`  | Optional | GitLab repository path for integration   |
 
 Integration tests are skipped if these secrets are not configured.
 
-### Artifacts
+**Artifacts:**
 
 - `coverage.xml` - XML coverage report for CI integrations
 - `htmlcov/` - HTML coverage report for detailed inspection
 - `pytest-results` - Test result files
 
-### Debugging Tips
+**Debugging:**
 
-- **Coverage threshold failures**: Check the "Check coverage threshold" step output for specific coverage percentages
-- **Integration tests skipped**: Verify `GITLAB_TOKEN` and `GITLAB_REPO` secrets are configured in repository settings
-- **Manual test runs**: Use `workflow_dispatch` from the Actions tab for on-demand testing
-- **Detailed coverage**: Download the `htmlcov` artifact to see line-by-line coverage
-- **Local reproduction**: Run `uv run pytest tests/unit/ --cov=src/glpkg --cov-report=term-missing`
+- Coverage threshold failures: Check the "Check coverage threshold" step
+  output for specific coverage percentages
+- Integration tests skipped: Verify `GITLAB_TOKEN` and `GITLAB_REPO`
+  secrets are configured in repository settings
+- Manual test runs: Use `workflow_dispatch` from Actions tab
+- Detailed coverage: Download the `htmlcov` artifact
+- Local reproduction:
+  `uv run pytest tests/unit/ --cov=src/glpkg --cov-report=term-missing`
 
 ## Lint Workflow
 
 **File:** `.github/workflows/lint.yml`
 
-### Purpose
+Performs code quality checks using ruff for linting/formatting and mypy for
+type checking to maintain consistent code standards.
 
-Performs code quality checks using ruff for linting/formatting and mypy for type checking to maintain consistent code standards.
-
-### Triggers
+**Triggers:**
 
 - Push to any branch
 - Pull requests to `main` or `master`
 - Manual dispatch via `workflow_dispatch`
 
-### Key Features
+**Key Features:**
 
-- **Ruff linting**: `ruff check src/` for code style and error detection
-- **Ruff formatting**: `ruff format --check src/` for consistent code formatting
-- **Mypy type checking**: Strict mode (`--strict`) for comprehensive type safety
+- Ruff linting: `ruff check src/` for code style and error detection
+- Ruff formatting: `ruff format --check src/` for consistent formatting
+- Mypy type checking: Strict mode (`--strict`) for comprehensive type safety
 - Uses Python 3.11 and `uv` for consistency
 
-### Required Secrets
+**Secrets:** None required.
 
-None
+**Debugging:**
 
-### Debugging Tips
-
-- **Ruff lint errors**: Run locally with `uv run ruff check src/ --fix` to auto-fix issues
-- **Ruff format errors**: Run `uv run ruff format src/` to auto-format code
-- **Mypy errors**: Run `uv run mypy src/glpkg/ --strict` locally to see detailed type errors
-- **Configuration**: Check `pyproject.toml` for ruff and mypy configuration options
-- **Ignore patterns**: Add inline `# noqa` comments or configure exclusions in `pyproject.toml`
+- Ruff lint errors: Run `uv run ruff check src/ --fix` to auto-fix issues
+- Ruff format errors: Run `uv run ruff format src/` to auto-format code
+- Mypy errors: Run `uv run mypy src/glpkg/ --strict` locally
+- Configuration: Check `pyproject.toml` for ruff and mypy settings
+- Ignore patterns: Add `# noqa` comments or configure in `pyproject.toml`
 
 ## Publish Workflow
 
 **File:** `.github/workflows/publish.yml`
 
-### Purpose
+Builds and publishes the package to PyPI and creates GitHub release assets
+including the universal `.pyz` binary.
 
-Builds and publishes the package to PyPI and creates GitHub release assets including the universal `.pyz` binary.
-
-### Triggers
+**Triggers:**
 
 - GitHub release published
 - Manual dispatch via `workflow_dispatch`
 
-### Key Features
+**Key Features:**
 
-- **Package building**: Creates wheel and sdist with `python -m build`
-- **Universal binary**: Builds `.pyz` file using shiv for standalone execution
-- **GitHub release assets**: Uploads `.pyz` binary to release assets
-- **PyPI publishing**: Publishes to PyPI using token authentication
-- **Package name**: Published as `glpkg-cli` on PyPI
+- Package building: Creates wheel and sdist with `python -m build`
+- Universal binary: Builds `.pyz` file using shiv for standalone execution
+- GitHub release assets: Uploads `.pyz` binary to release assets
+- PyPI publishing: Publishes to PyPI using token authentication
+- Package name: Published as `glpkg-cli` on PyPI
 
-### Required Secrets
+**Secrets:**
 
-| Secret | Required | Description |
-|--------|----------|-------------|
-| `PYPI_API_TOKEN` | Yes | PyPI API token with upload permissions |
+| Secret           | Required | Description                           |
+| ---------------- | -------- | ------------------------------------- |
+| `PYPI_API_TOKEN` | Yes      | PyPI API token with upload permission |
 
-### Artifacts
+**Artifacts:**
 
 - `dist/` directory containing:
   - `*.whl` - Wheel package
   - `*.tar.gz` - Source distribution
   - `*.pyz` - Universal binary
 
-### Debugging Tips
+**Debugging:**
 
-- **Test .pyz build locally**: `bash scripts/build_pyz.sh --tool shiv --output-dir dist`
-- **Verify package builds**: `uv pip install build --system && python -m build`
-- **PyPI token issues**: Ensure token has "Upload packages" permission for the `glpkg-cli` project
-- **Build script issues**: Review `scripts/build_pyz.sh` for shiv configuration
-- **Version conflicts**: Check that the version in `pyproject.toml` doesn't already exist on PyPI
-- **Local testing**: Install the built wheel with `pip install dist/*.whl` before publishing
+- Test .pyz build locally:
+  `bash scripts/build_pyz.sh --tool shiv --output-dir dist`
+- Verify package builds:
+  `uv pip install build --system && python -m build`
+- PyPI token issues: Ensure token has "Upload packages" permission
+- Build script issues: Review `scripts/build_pyz.sh` for shiv configuration
+- Version conflicts: Check version in `pyproject.toml` doesn't exist on PyPI
+- Local testing: Install built wheel with `pip install dist/*.whl`
 
 ## Documentation Workflow
 
 **File:** `.github/workflows/docs.yml`
 
-### Purpose
+Validates markdown files for proper formatting and checks that all links
+are functional.
 
-Validates markdown files for proper formatting and checks that all links are functional.
-
-### Triggers
+**Triggers:**
 
 - Push to any branch
 - Pull requests to `main` or `master`
 - Manual dispatch via `workflow_dispatch`
 
-### Key Features
+**Key Features:**
 
-- **Markdown linting** with markdownlint-cli2 for consistent formatting
-- **Link checking** with markdown-link-check for broken URL detection
-- **Validated files**:
+- Markdown linting with markdownlint-cli2 for consistent formatting
+- Link checking with markdown-link-check for broken URL detection
+- Validated files:
   - `README.md`
   - `CONTRIBUTING.md`
   - `tests/README.md`
@@ -160,17 +162,15 @@ Validates markdown files for proper formatting and checks that all links are fun
   - `docs/SHELL_COMPLETION.md`
   - `docs/WORKFLOWS.md`
 
-### Required Secrets
+**Secrets:** None required.
 
-None
+**Debugging:**
 
-### Debugging Tips
-
-- **Markdown lint errors**: Install markdownlint-cli2 locally (`npm install -g markdownlint-cli2`) and run on specific files
-- **Broken links**: Verify URLs are accessible; some may be rate-limited or require authentication
-- **Custom rules**: Add `.markdownlint.json` to configure or disable specific linting rules
-- **Link check config**: Add `.markdown-link-check.json` for custom link checking behavior
-- **False positives**: Some internal links may fail in CI but work in the repository
+- Markdown lint errors: Install markdownlint-cli2 locally and run on files
+- Broken links: Verify URLs are accessible
+- Custom rules: Add `.markdownlint.json` to configure linting rules
+- Link check config: Add `.markdown-link-check.json` for custom behavior
+- False positives: Some internal links may fail in CI but work locally
 
 ## Workflow Status Badges
 
@@ -183,31 +183,34 @@ Add these badges to your README.md to display workflow status:
 ![Docs](https://github.com/OWNER/REPO/actions/workflows/docs.yml/badge.svg)
 ```
 
-Replace `OWNER/REPO` with your actual GitHub repository path (e.g., `your-org/glpkg`).
+Replace `OWNER/REPO` with your actual GitHub repository path.
 
 ## Common Debugging Steps
 
-1. **Check workflow logs**: Navigate to the Actions tab in GitHub and select the failed workflow run
-2. **Manual testing**: Use `workflow_dispatch` to trigger workflows manually for debugging
-3. **Local reproduction**: Run the same commands locally using `uv` before pushing
-4. **Review configuration**: Check `pyproject.toml` for tool-specific settings
-5. **Secret verification**: Ensure required secrets are configured in repository Settings > Secrets and variables > Actions
-6. **Branch protection**: Verify branch protection rules aren't blocking workflow execution
-7. **Permissions**: Check that the `GITHUB_TOKEN` has necessary permissions for the workflow
+1. **Check workflow logs**: Navigate to Actions tab and select failed run
+2. **Manual testing**: Use `workflow_dispatch` to trigger manually
+3. **Local reproduction**: Run same commands locally using `uv`
+4. **Review configuration**: Check `pyproject.toml` for tool settings
+5. **Secret verification**: Ensure secrets are configured in Settings
+6. **Branch protection**: Verify rules aren't blocking execution
+7. **Permissions**: Check `GITHUB_TOKEN` has necessary permissions
 
 ## Future Improvements
 
 ### Integration Test Secret Checking
 
-The current condition `${{ secrets.GITLAB_TOKEN != '' }}` may not work as expected since GitHub Actions doesn't expose secret values in expressions. Consider these alternatives:
+The current condition `${{ secrets.GITLAB_TOKEN != '' }}` may not work as
+expected since GitHub Actions doesn't expose secret values in expressions.
+Consider these alternatives:
 
 - Use a dedicated job with conditional execution based on repository context
-- Use environment-based checks with separate environments for integration testing
-- Restrict integration tests to specific branches: `if: github.ref == 'refs/heads/main'`
+- Use environment-based checks with separate environments
+- Restrict integration tests to specific branches
 
 ### PyPI Trusted Publishing
 
-The current workflow uses token-based authentication (`PYPI_API_TOKEN`). Consider migrating to PyPI trusted publishing (OIDC) for enhanced security:
+The current workflow uses token-based authentication (`PYPI_API_TOKEN`).
+Consider migrating to PyPI trusted publishing (OIDC) for enhanced security.
 
 **Benefits:**
 
@@ -219,7 +222,9 @@ The current workflow uses token-based authentication (`PYPI_API_TOKEN`). Conside
 
 1. Configure the PyPI project for trusted publishing in PyPI settings
 2. Add the GitHub repository as a trusted publisher
-3. Update the workflow to use `pypa/gh-action-pypi-publish` with OIDC
+3. Update workflow to use `pypa/gh-action-pypi-publish` with OIDC
 4. Remove the `PYPI_API_TOKEN` secret after verification
 
-See [PyPI Trusted Publishing documentation](https://docs.pypi.org/trusted-publishers/) for details.
+See [PyPI Trusted Publishing documentation][pypi-trusted] for details.
+
+[pypi-trusted]: https://docs.pypi.org/trusted-publishers/

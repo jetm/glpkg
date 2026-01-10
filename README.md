@@ -32,11 +32,14 @@ glpkg --help
 
 ### Universal Binary (.pyz)
 
-Download the pre-built universal binary from GitHub releases. This is a self-contained executable that requires no installation - just Python 3.11+.
+Download the pre-built universal binary from GitHub releases.
+This is a self-contained executable that requires no installation -
+just Python 3.11+.
 
 ```bash
 # Download the latest release
-curl -L -o glpkg.pyz https://github.com/your-org/glpkg/releases/latest/download/glpkg.pyz
+curl -L -o glpkg.pyz \
+  https://github.com/your-org/glpkg/releases/latest/download/glpkg.pyz
 
 # Make it executable
 chmod +x glpkg.pyz
@@ -81,13 +84,16 @@ uv run glpkg --help
 
 ```bash
 # Upload a single file
-glpkg upload --package-name my-package --package-version 1.0.0 --files file.tar.gz
+glpkg upload --package-name my-package --package-version 1.0.0 \
+  --files file.tar.gz
 
 # Upload multiple files
-glpkg upload --package-name my-package --package-version 1.0.0 --files file1.tar.gz file2.zip
+glpkg upload --package-name my-package --package-version 1.0.0 \
+  --files file1.tar.gz file2.zip
 
 # Upload with automatic project detection from git remote
-glpkg upload --package-name my-package --package-version 1.0.0 --files file.tar.gz
+glpkg upload --package-name my-package --package-version 1.0.0 \
+  --files file.tar.gz
 
 # Specify project explicitly
 glpkg upload --package-name my-package --package-version 1.0.0 \
@@ -98,21 +104,23 @@ glpkg upload --package-name my-package --package-version 1.0.0 \
     --duplicate-policy replace --files file.tar.gz
 
 # Verbose output with global flags
-glpkg --verbose upload --package-name my-package --package-version 1.0.0 --files file.tar.gz
+glpkg --verbose upload --package-name my-package \
+  --package-version 1.0.0 --files file.tar.gz
 
 # JSON output for CI/CD pipelines
-glpkg --json-output upload --package-name my-package --package-version 1.0.0 --files file.tar.gz
+glpkg --json-output upload --package-name my-package \
+  --package-version 1.0.0 --files file.tar.gz
 ```
 
 ## Configuration
 
 ### Environment Variables
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `GITLAB_TOKEN` | GitLab personal access token with `api` scope | Yes |
-| `GITLAB_URL` | GitLab instance URL | No (defaults to https://gitlab.com) |
-| `GITLAB_PROJECT_PATH` | Project path (e.g., `namespace/project`) | No (auto-detected from git) |
+| Variable              | Description                            | Required |
+| --------------------- | -------------------------------------- | -------- |
+| `GITLAB_TOKEN`        | GitLab access token with api scope     | Yes      |
+| `GITLAB_URL`          | GitLab URL (default: gitlab.com)       | No       |
+| `GITLAB_PROJECT_PATH` | Project path (e.g., `group/project`)   | No       |
 
 ### Token Permissions
 
@@ -142,22 +150,22 @@ uv run pytest tests/unit/
 
 ### Documentation
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) - Development setup and contribution guidelines
-- [docs/SHELL_COMPLETION.md](docs/SHELL_COMPLETION.md) - Shell completion setup for bash and zsh
-- [docs/RELEASING.md](docs/RELEASING.md) - Release procedures and publishing workflow
-- [docs/WORKFLOWS.md](docs/WORKFLOWS.md) - GitHub Actions workflows and CI/CD pipeline
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Development setup and guidelines
+- [docs/SHELL_COMPLETION.md](docs/SHELL_COMPLETION.md) - Shell completion
+- [docs/RELEASING.md](docs/RELEASING.md) - Release procedures
+- [docs/WORKFLOWS.md](docs/WORKFLOWS.md) - GitHub Actions workflows
 - [tests/README.md](tests/README.md) - Detailed testing documentation
 
 ## Project Structure
 
-```
+```text
 glpkg/
 ├── src/
 │   └── glpkg/
 │       ├── __init__.py
 │       ├── cli/
 │       │   ├── __init__.py
-│       │   ├── main.py         # Main CLI entry point with subcommand routing
+│       │   ├── main.py         # Main CLI entry point
 │       │   └── upload.py       # Upload subcommand implementation
 │       ├── models.py           # Data models
 │       ├── uploader.py         # Upload logic

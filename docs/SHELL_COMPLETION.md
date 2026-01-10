@@ -1,6 +1,7 @@
 # Shell Completion Setup
 
-glpkg supports shell completion for bash and zsh, providing tab-completion for commands, options, and arguments.
+glpkg supports shell completion for bash and zsh, providing tab-completion
+for commands, options, and arguments.
 
 ## Overview
 
@@ -94,12 +95,12 @@ glpkg upload --pack<Tab>  # completes to --package-name
 Test that completion is working:
 
 1. Open a new terminal or reload your shell
-2. Type `glpkg ` and press Tab twice
+2. Type `glpkg` followed by a space and press Tab twice
 3. You should see available commands and options
 
 If completion works, you'll see suggestions like:
 
-```
+```text
 upload        --help        --verbose     --json-output
 ```
 

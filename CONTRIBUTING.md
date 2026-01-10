@@ -1,6 +1,7 @@
 # Contributing to glpkg
 
-Thank you for your interest in contributing to glpkg! This document provides guidelines and instructions for development.
+Thank you for your interest in contributing to glpkg! This document provides
+guidelines and instructions for development.
 
 ## Getting Started
 
@@ -138,7 +139,8 @@ open htmlcov/index.html  # or xdg-open on Linux
 When adding new features:
 
 1. Add unit tests in `tests/unit/`
-2. Add integration tests in `tests/integration/` if the feature interacts with external services
+2. Add integration tests in `tests/integration/` if the feature interacts
+   with external services
 3. Update documentation in README.md or relevant docs
 4. Add appropriate pytest markers:
    - `@pytest.mark.unit` for unit tests

@@ -131,7 +131,9 @@ PyPI requires API token authentication (username/password is no longer supported
 uv pip install twine
 
 # Upload to PyPI using API token
-TWINE_USERNAME=__token__ TWINE_PASSWORD=pypi-<your-api-token> uv run twine upload dist/glpkg_cli-${VERSION}*
+TWINE_USERNAME=__token__ \
+TWINE_PASSWORD=pypi-<your-api-token> \
+uv run twine upload dist/glpkg_cli-${VERSION}*
 ```
 
 Alternatively, configure credentials in `~/.pypirc`:
@@ -150,8 +152,11 @@ uv run twine upload dist/glpkg_cli-${VERSION}*
 
 For more information, see:
 
-- [API Tokens](https://pypi.org/help/#apitoken) - Create a token for manual uploads
-- [Trusted Publishers](https://pypi.org/help/#trusted-publishers) - Configure GitHub Actions for automated publishing
+- [API Tokens][pypi-tokens] - Create a token for manual uploads
+- [Trusted Publishers][pypi-trusted] - Configure GitHub Actions
+
+[pypi-tokens]: https://pypi.org/help/#apitoken
+[pypi-trusted]: https://pypi.org/help/#trusted-publishers
 
 ### 4. Build and Upload .pyz Binary
 

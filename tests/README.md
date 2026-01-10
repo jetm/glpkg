@@ -1,17 +1,23 @@
 # GitLab Package Upload Test Suite
 
-This directory contains a comprehensive pytest-based test suite for the GitLab package upload functionality. The test suite validates the `glpkg` command through both unit tests and end-to-end integration testing.
+This directory contains a comprehensive pytest-based test suite for the GitLab
+package upload functionality. The test suite validates the `glpkg` command
+through both unit tests and end-to-end integration testing.
 
 ## Overview
 
 The test suite is organized into two categories:
 
-- **Unit tests** (`tests/unit/`): Fast tests that validate individual components without external dependencies
-- **Integration tests** (`tests/integration/`): End-to-end tests that execute the actual upload script and verify results against the GitLab Package Registry
+- **Unit tests** (`tests/unit/`): Fast tests that validate individual
+  components without external dependencies
+- **Integration tests** (`tests/integration/`): End-to-end tests that execute
+  the actual upload script and verify results against the GitLab Package
+  Registry
 
 ## Quick Start
 
-All test dependencies are automatically managed by uv. However, the `glpkg` package must be installed in development mode before running tests.
+All test dependencies are automatically managed by uv. However, the `glpkg`
+package must be installed in development mode before running tests.
 
 ```bash
 # Install the package in development mode (required before running tests)
@@ -35,9 +41,10 @@ uv run pytest tests/ -n auto
 uv run pytest tests/ -v
 ```
 
-### Using the Convenience Wrapper
+### Convenience Wrapper
 
-The `run_tests.py` script provides convenience commands that delegate to `uv run pytest`:
+The `run_tests.py` script provides convenience commands that delegate to
+`uv run pytest`:
 
 ```bash
 # Run unit tests
@@ -55,7 +62,7 @@ The `run_tests.py` script provides convenience commands that delegate to `uv run
 
 ## Test Structure
 
-```
+```text
 tests/
 ├── conftest.py                    # Shared fixtures and configuration
 ├── unit/                          # Unit tests (no external dependencies)
@@ -70,7 +77,7 @@ tests/
 │   ├── test_single_file_upload.py # Single file upload tests
 │   ├── test_multiple_files_upload.py # Multiple files upload tests
 │   ├── test_duplicate_handling.py # Skip, replace, error policies
-│   ├── test_project_resolution.py # Auto-detection and manual specification
+│   ├── test_project_resolution.py # Auto-detection and manual spec
 │   ├── test_error_scenarios.py    # Network failures, auth errors
 │   └── test_end_to_end.py         # Comprehensive end-to-end scenarios
 ├── utils/
@@ -91,7 +98,9 @@ tests/
 
 ### Dependency Management
 
-All test dependencies are automatically installed by uv when running `uv run pytest`. The dependencies are defined in `pyproject.toml` under `[project.optional-dependencies]`:
+All test dependencies are automatically installed by uv when running
+`uv run pytest`. The dependencies are defined in `pyproject.toml` under
+`[project.optional-dependencies]`:
 
 - pytest
 - pytest-xdist (parallel execution)
@@ -100,7 +109,8 @@ All test dependencies are automatically installed by uv when running `uv run pyt
 - pytest-instafail (instant failure reporting)
 - pytest-cov (code coverage reporting)
 
-**Important**: The `glpkg` package itself must be installed in development mode before running tests:
+**Important**: The `glpkg` package itself must be installed in development
+mode before running tests:
 
 ```bash
 uv pip install -e .
@@ -129,6 +139,7 @@ export GITLAB_PROJECT_PATH="group/project"
 ### Required Permissions
 
 Your GitLab token needs the following permissions:
+
 - `api` scope for full API access
 - Write access to the target project's Package Registry
 - Ability to create and delete packages in the registry
@@ -185,7 +196,7 @@ uv run pytest tests/ -m "not slow"
 uv run pytest tests/ -m api
 ```
 
-### Using the Convenience Wrapper
+### Wrapper Script Usage
 
 ```bash
 # Run unit tests
@@ -243,22 +254,23 @@ show_missing = true
 
 ### Interpreting Coverage Reports
 
-- **Term-missing output**: Shows which lines are not covered directly in the terminal
+- **Term-missing output**: Shows which lines are not covered in terminal
 - **HTML report**: Provides an interactive view in `htmlcov/index.html`
 - **XML report**: Machine-readable format for CI integration in `coverage.xml`
 
 ## Integration Test Requirements
 
-Integration tests require explicit opt-in and automatically validate their environment before running.
+Integration tests require explicit opt-in and automatically validate their
+environment before running.
 
 ### Automatic Environment Validation
 
 When you run integration tests, the test suite checks:
 
-1. **RUN_INTEGRATION_TESTS environment variable** - Must be set to `1` to opt-in
-2. **GITLAB_TOKEN environment variable** - Must be set with a valid GitLab API token
+1. **RUN_INTEGRATION_TESTS environment variable** - Must be set to `1`
+2. **GITLAB_TOKEN environment variable** - Must be set with a valid token
 3. **Git repository** - Must run from within a Git repository
-4. **GitLab remotes** - Repository must have at least one remote pointing to a GitLab instance
+4. **GitLab remotes** - Repository must have at least one GitLab remote
 
 ### Verifying Your Setup
 
@@ -276,18 +288,22 @@ git remote -v | grep gitlab
 echo $GITLAB_TOKEN
 
 # Verify full setup
-[ "$RUN_INTEGRATION_TESTS" = "1" ] && echo "Integration tests enabled" || echo "Integration tests NOT enabled"
-[ -n "$GITLAB_TOKEN" ] && echo "Token is set" || echo "Token is NOT set"
+[ "$RUN_INTEGRATION_TESTS" = "1" ] && \
+  echo "Integration tests enabled" || \
+  echo "Integration tests NOT enabled"
+[ -n "$GITLAB_TOKEN" ] && \
+  echo "Token is set" || \
+  echo "Token is NOT set"
 ```
 
 ### When Validation Fails
 
 If integration tests are skipped, the error message explains what's missing:
 
-- **Integration tests disabled**: Set `export RUN_INTEGRATION_TESTS=1` to opt-in
-- **Missing GITLAB_TOKEN**: Set the environment variable with `export GITLAB_TOKEN='your-token'`
+- **Integration tests disabled**: Set `export RUN_INTEGRATION_TESTS=1`
+- **Missing GITLAB_TOKEN**: Set with `export GITLAB_TOKEN='your-token'`
 - **No Git repository**: Navigate to a Git repository or initialize one
-- **No GitLab remotes**: Add a GitLab remote with `git remote add origin https://gitlab.com/namespace/project.git`
+- **No GitLab remotes**: Add a GitLab remote with `git remote add origin`
 
 ## Debugging Test Failures
 
@@ -319,16 +335,19 @@ uv run pytest tests/ -v --log-cli-level=DEBUG
 ### Common Issues
 
 #### Authentication Errors
+
 - Verify `GITLAB_TOKEN` is set and valid
 - Check token has required permissions (`api` scope)
 - Test with unit tests: `uv run pytest tests/unit/` (doesn't require token)
 
 #### Timeout Errors
+
 - Check network connectivity to GitLab
 - Run sequentially: `uv run pytest tests/integration/` (without `-n auto`)
 - Increase timeout: `uv run pytest tests/ --timeout=1200`
 
 #### Parallel Execution Issues
+
 - Run sequentially for debugging: `uv run pytest tests/` (without `-n auto`)
 - Check rate limiter is working properly
 
@@ -378,11 +397,11 @@ End-to-end tests requiring GitLab API access:
 
 ## Test Execution Time
 
-| Test Category | Duration | Requirements |
-|---------------|----------|--------------|
-| Unit tests | 10-30 seconds | None |
-| Integration tests | 10-15 minutes | GITLAB_TOKEN |
-| All tests (parallel) | 5-10 minutes | GITLAB_TOKEN |
+| Test Category         | Duration       | Requirements   |
+| --------------------- | -------------- | -------------- |
+| Unit tests            | 10-30 seconds  | None           |
+| Integration tests     | 10-15 minutes  | GITLAB_TOKEN   |
+| All tests (parallel)  | 5-10 minutes   | GITLAB_TOKEN   |
 
 ## Adding New Tests
 
@@ -394,6 +413,7 @@ End-to-end tests requiring GitLab API access:
 4. Add appropriate markers for categorization
 
 Example:
+
 ```python
 import pytest
 
