@@ -655,7 +655,7 @@ def validate_dependencies() -> None:
             "   • Set local version: pyenv local 3.11\n\n"
             "3. Use uv to run with correct Python version:\n"
             "   • Install uv: pip install uv\n"
-            "   • Run script: uv run --python 3.11 ./gitlab/gitlab-pkg-upload.py\n\n"
+            "   • Run command: uv run --python 3.11 gitlab-pkg-upload\n\n"
             "For more help, see: https://docs.python.org/3/installing/"
         )
 
@@ -683,9 +683,9 @@ def validate_dependencies() -> None:
         error_msg += (
             "\nSOLUTION:\n"
             "1. If using uv (recommended):\n"
-            "   • Ensure script has proper shebang: #!/usr/bin/env -S uv run --script\n"
-            "   • Run directly: ./gitlab/gitlab-pkg-upload.py\n"
-            "   • uv will automatically install dependencies\n\n"
+            "   • Install package: uv pip install -e .\n"
+            "   • Run command: gitlab-pkg-upload\n"
+            "   • Or run directly: uv run gitlab-pkg-upload\n\n"
             "2. Manual installation with pip:\n"
         )
 

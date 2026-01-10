@@ -39,6 +39,7 @@ test = [
     "pytest-xdist",
     "pytest-timeout",
     "pytest-sugar",
+    "pytest-instafail",
 ]
 
 [project.scripts]

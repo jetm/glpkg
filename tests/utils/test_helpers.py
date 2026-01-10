@@ -19,6 +19,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
+# Add src directory to sys.path as a fallback for running tests without
+# installing the package. This allows tests to run from the repository
+# without requiring `uv pip install -e .` first.
+_src_path = Path(__file__).parent.parent.parent / "src"
+if _src_path.exists() and str(_src_path) not in sys.path:
+    sys.path.insert(0, str(_src_path))
+
 # Import from the new modular structure
 try:
     from gitlab_pkg_upload.cli import main as cli_main
@@ -138,22 +145,17 @@ class ScriptExecutor:
         Initialize script executor.
 
         Args:
-            script_path: Path to the upload script. If None, uses direct module invocation.
-                        This parameter is kept for backward compatibility but is
-                        ignored when CLI_AVAILABLE is True.
+            script_path: Deprecated parameter, kept for backward compatibility.
+                        Direct module invocation is always used via gitlab_pkg_upload.cli.
         """
         self.script_path = script_path
         self._use_direct_invocation = CLI_AVAILABLE
 
-        # If direct invocation is not available, fall back to subprocess
         if not self._use_direct_invocation:
-            if script_path is None:
-                # Default to the upload script in the same directory as the test
-                script_path = Path(__file__).parent.parent.parent / "gitlab-pkg-upload.py"
-            self.script_path = script_path
-
-            if not self.script_path.exists():
-                raise FileNotFoundError(f"Upload script not found at: {self.script_path}")
+            raise ImportError(
+                "gitlab_pkg_upload module is not available. "
+                "Install the package with: uv pip install -e ."
+            )
 
     def execute_upload(self, execution: UploadExecution) -> UploadResult:
         """

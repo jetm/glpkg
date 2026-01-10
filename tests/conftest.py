@@ -240,7 +240,7 @@ class GitLabTestClient:
                         "GitLab Generic Package Registry may not support subdirectories properly."
                     )
                     # For subdirectory files, we'll assume success if the file was uploaded
-                    # This matches the behavior in gitlab-pkg-upload.py validate_upload()
+                    # This matches the behavior in gitlab_pkg_upload.uploader.validate_upload()
                     return True
 
                 return False
