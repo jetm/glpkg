@@ -109,6 +109,69 @@ Your GitLab token needs the following permissions:
 - Write access to the target project's Package Registry
 - Ability to create and delete packages in the registry
 
+## Integration Test Requirements
+
+Integration tests automatically validate their environment before running. If requirements aren't met, tests will be skipped with clear, actionable error messages explaining what's missing and how to fix it.
+
+### Automatic Environment Validation
+
+When you run integration tests, the test suite automatically checks:
+
+1. **GITLAB_TOKEN environment variable** - Must be set with a valid GitLab API token
+2. **Git repository** - Must run from within a Git repository
+3. **GitLab remotes** - Repository must have at least one remote pointing to a GitLab instance
+
+### Verifying Your Setup
+
+Use these commands to verify your environment meets the requirements:
+
+```bash
+# Check if in Git repository
+git remote -v
+
+# Verify GitLab remote exists (should show at least one gitlab.com or your GitLab instance)
+git remote -v | grep gitlab
+
+# Check token is set
+echo $GITLAB_TOKEN
+
+# Or verify token is not empty
+[ -n "$GITLAB_TOKEN" ] && echo "Token is set" || echo "Token is NOT set"
+```
+
+### When Validation Fails
+
+If integration tests are skipped, the error message will explain exactly what's missing:
+
+- **Missing GITLAB_TOKEN**: Set the environment variable with `export GITLAB_TOKEN='your-token'`
+- **No Git repository**: Navigate to a Git repository or initialize one
+- **No GitLab remotes**: Add a GitLab remote with `git remote add origin https://gitlab.com/namespace/project.git`
+- **Alternative**: Use manual project specification with `export GITLAB_PROJECT_PATH='namespace/project'`
+
+### Example Output
+
+When the environment is properly configured, you'll see validation confirmation:
+```
+Integration test environment validated:
+  - GITLAB_TOKEN: [set]
+  - Git repository: /path/to/your/repo
+  - GitLab remotes detected: origin=namespace/project
+```
+
+When something is missing, tests will be skipped with a detailed message:
+```
+SKIPPED [1] tests/integration/conftest.py:163: GITLAB_TOKEN environment variable not set.
+
+Integration tests require a valid GitLab API token.
+
+SOLUTION:
+1. Create a GitLab personal access token with 'api' scope:
+   GitLab → Settings → Access Tokens → Create token
+
+2. Set the environment variable:
+   export GITLAB_TOKEN='your-token-here'
+```
+
 ## Pytest Plugins
 
 The test suite uses the following pytest plugins:

@@ -25,14 +25,6 @@ pytestmark = [
 ]
 
 
-def _get_gitlab_token():
-    """Get GitLab token from environment with proper error handling."""
-    token = os.environ.get("GITLAB_TOKEN")
-    if not token:
-        pytest.skip("GITLAB_TOKEN environment variable not set")
-    return token
-
-
 @pytest.mark.timeout(600)
 def test_comprehensive_upload_validation(gitlab_client, artifact_manager, project_path):
     """
@@ -76,7 +68,7 @@ def test_comprehensive_upload_validation(gitlab_client, artifact_manager, projec
 
     single_result = executor.execute_upload(
         argv=single_argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -122,7 +114,7 @@ def test_comprehensive_upload_validation(gitlab_client, artifact_manager, projec
 
     multi_result = executor.execute_upload(
         argv=multi_argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -167,7 +159,7 @@ def test_comprehensive_upload_validation(gitlab_client, artifact_manager, projec
 
     dir_result = executor.execute_upload(
         argv=dir_argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -247,7 +239,7 @@ def test_error_scenario_validation(gitlab_client, artifact_manager, project_path
 
     result = executor.execute_upload(
         argv=argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         expected_exit_code=1,
         use_json_output=True,
     )
@@ -277,7 +269,7 @@ def test_error_scenario_validation(gitlab_client, artifact_manager, project_path
 
     result = executor.execute_upload(
         argv=argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         expected_exit_code=1,
         use_json_output=True,
     )
@@ -308,7 +300,7 @@ def test_error_scenario_validation(gitlab_client, artifact_manager, project_path
 
     result = executor.execute_upload(
         argv=argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         expected_exit_code=1,
         use_json_output=True,
     )
@@ -485,7 +477,7 @@ def test_end_to_end_workflow_validation(gitlab_client, artifact_manager, project
 
     result = executor.execute_upload(
         argv=argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -560,7 +552,7 @@ def test_parallel_execution_safety(gitlab_client, artifact_manager, project_path
 
     result = executor.execute_upload(
         argv=argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -646,7 +638,7 @@ def test_comprehensive_cleanup_verification(
 
         result = executor.execute_upload(
             argv=argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             use_json_output=True,
         )
 
@@ -734,7 +726,7 @@ def test_multi_scenario_workflow_validation(
 
     result_1 = executor.execute_upload(
         argv=argv_1,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -753,7 +745,7 @@ def test_multi_scenario_workflow_validation(
     # Second upload (should skip duplicate)
     result_1_dup = executor.execute_upload(
         argv=argv_1,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -784,7 +776,7 @@ def test_multi_scenario_workflow_validation(
 
     result_2 = executor.execute_upload(
         argv=argv_2,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -826,7 +818,7 @@ def test_multi_scenario_workflow_validation(
 
     result_3 = executor.execute_upload(
         argv=argv_3,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 

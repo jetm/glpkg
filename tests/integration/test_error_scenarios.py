@@ -22,14 +22,6 @@ pytestmark = [
 ]
 
 
-def _get_gitlab_token():
-    """Get GitLab token from environment with proper error handling."""
-    token = os.environ.get("GITLAB_TOKEN")
-    if not token:
-        pytest.skip("GITLAB_TOKEN environment variable not set")
-    return token
-
-
 class TestErrorScenarios:
     """
     Test class for error scenario handling using direct module invocation.
@@ -66,7 +58,7 @@ class TestErrorScenarios:
             "--package-version", "1.0.0",
             "--gitlab-url", "https://invalid-gitlab-url.example.com",
             "--project-path", project_path,
-            "--token", _get_gitlab_token(),
+            "--token", os.environ.get("GITLAB_TOKEN"),
             "--files", str(test_file.path),
             "--json-output",
         ]
@@ -242,7 +234,7 @@ class TestErrorScenarios:
         # Execute upload (should fail due to missing file)
         upload_result = executor.execute_upload(
             argv=argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             expected_exit_code=1,
             use_json_output=True,
         )
@@ -299,7 +291,7 @@ class TestErrorScenarios:
         # Execute upload (should fail due to invalid project)
         upload_result2 = executor.execute_upload(
             argv=argv2,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             expected_exit_code=1,
             use_json_output=True,
         )
@@ -369,7 +361,7 @@ class TestErrorScenarios:
         # Execute upload (should fail due to invalid file)
         upload_result = executor.execute_upload(
             argv=argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             expected_exit_code=1,
             use_json_output=True,
         )
@@ -442,7 +434,7 @@ class TestErrorScenarios:
         # Execute upload (should fail due to non-ASCII filename)
         upload_result = executor.execute_upload(
             argv=argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             expected_exit_code=1,
             use_json_output=True,
         )
@@ -523,7 +515,7 @@ def test_non_ascii_filename_in_directory(gitlab_client, artifact_manager, projec
     # Execute upload (should fail due to non-ASCII filename)
     upload_result = executor.execute_upload(
         argv=argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         expected_exit_code=1,
         use_json_output=True,
     )
@@ -611,7 +603,7 @@ def test_mixed_ascii_non_ascii_filenames(gitlab_client, artifact_manager, projec
     # Execute upload (should fail due to non-ASCII filenames)
     upload_result = executor.execute_upload(
         argv=argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         expected_exit_code=1,
         use_json_output=True,
     )

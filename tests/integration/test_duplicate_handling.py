@@ -23,14 +23,6 @@ pytestmark = [
 ]
 
 
-def _get_gitlab_token():
-    """Get GitLab token from environment with proper error handling."""
-    token = os.environ.get("GITLAB_TOKEN")
-    if not token:
-        pytest.skip("GITLAB_TOKEN environment variable not set")
-    return token
-
-
 def _validate_upload_consistency(
     gitlab_client,
     package_name: str,
@@ -115,7 +107,7 @@ class TestDuplicateHandling:
 
         first_upload_result = executor.execute_upload(
             argv=first_argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             use_json_output=True,
         )
 
@@ -149,7 +141,7 @@ class TestDuplicateHandling:
         # Second upload - should skip duplicate
         second_upload_result = executor.execute_upload(
             argv=first_argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             use_json_output=True,
         )
 
@@ -219,7 +211,7 @@ class TestDuplicateHandling:
 
         first_upload_result = executor.execute_upload(
             argv=first_argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             use_json_output=True,
         )
 
@@ -256,7 +248,7 @@ class TestDuplicateHandling:
 
         second_upload_result = executor.execute_upload(
             argv=second_argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             use_json_output=True,
         )
 
@@ -342,7 +334,7 @@ class TestDuplicateHandling:
 
         first_upload_result = executor.execute_upload(
             argv=first_argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             use_json_output=True,
         )
 
@@ -364,7 +356,7 @@ class TestDuplicateHandling:
         # Second upload with same file - should fail due to error policy
         second_upload_result = executor.execute_upload(
             argv=first_argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             expected_exit_code=1,  # Expect failure
             use_json_output=True,
         )
@@ -440,7 +432,7 @@ def test_multiple_file_skip_duplicates(gitlab_client, artifact_manager, project_
 
     first_upload_result = executor.execute_upload(
         argv=first_argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -462,7 +454,7 @@ def test_multiple_file_skip_duplicates(gitlab_client, artifact_manager, project_
     # Second upload with same files - should skip all duplicates
     second_upload_result = executor.execute_upload(
         argv=first_argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -539,7 +531,7 @@ def test_mixed_duplicate_and_new_files(gitlab_client, artifact_manager, project_
 
     first_upload_result = executor.execute_upload(
         argv=first_argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -579,7 +571,7 @@ def test_mixed_duplicate_and_new_files(gitlab_client, artifact_manager, project_
 
     second_upload_result = executor.execute_upload(
         argv=second_argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 

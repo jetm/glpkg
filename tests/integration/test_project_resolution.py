@@ -22,14 +22,6 @@ pytestmark = [
 ]
 
 
-def _get_gitlab_token():
-    """Get GitLab token from environment with proper error handling."""
-    token = os.environ.get("GITLAB_TOKEN")
-    if not token:
-        pytest.skip("GITLAB_TOKEN environment variable not set")
-    return token
-
-
 class TestProjectResolution:
     """
     Test class for project resolution functionality using direct module invocation.
@@ -70,7 +62,7 @@ class TestProjectResolution:
         # Execute upload
         upload_result = executor.execute_upload(
             argv=argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             use_json_output=True,
         )
 
@@ -154,7 +146,7 @@ class TestProjectResolution:
             # Execute upload (expecting it to fail)
             upload_result = executor.execute_upload(
                 argv=argv,
-                env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+                env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
                 expected_exit_code=1,
                 use_json_output=True,
             )
@@ -204,7 +196,7 @@ class TestProjectResolution:
         # Execute upload
         upload_result = executor.execute_upload(
             argv=argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             use_json_output=True,
         )
 
@@ -267,7 +259,7 @@ class TestProjectResolution:
         # Execute upload
         upload_result = executor.execute_upload(
             argv=argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             use_json_output=True,
         )
 
@@ -335,7 +327,7 @@ class TestProjectResolution:
         # Execute upload (expecting it to fail)
         upload_result = executor.execute_upload(
             argv=argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             expected_exit_code=1,
             use_json_output=True,
         )
@@ -428,7 +420,7 @@ class TestProjectResolution:
         # Execute upload (expecting it to fail)
         upload_result = executor.execute_upload(
             argv=argv,
-            env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+            env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
             expected_exit_code=1,
             use_json_output=True,
         )

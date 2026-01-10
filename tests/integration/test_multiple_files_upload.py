@@ -21,14 +21,6 @@ pytestmark = [
 ]
 
 
-def _get_gitlab_token():
-    """Get GitLab token from environment with proper error handling."""
-    token = os.environ.get("GITLAB_TOKEN")
-    if not token:
-        pytest.skip("GITLAB_TOKEN environment variable not set")
-    return token
-
-
 @pytest.mark.timeout(180)
 def test_multiple_file_upload(gitlab_client, artifact_manager, project_path):
     """
@@ -68,7 +60,7 @@ def test_multiple_file_upload(gitlab_client, artifact_manager, project_path):
     # Execute upload via direct module invocation
     upload_result = executor.execute_upload(
         argv=argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -151,7 +143,7 @@ def test_directory_upload(gitlab_client, artifact_manager, project_path):
     # Execute upload via direct module invocation
     upload_result = executor.execute_upload(
         argv=argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -240,7 +232,7 @@ def test_file_mapping_upload(gitlab_client, artifact_manager, project_path):
     # Execute upload via direct module invocation
     upload_result = executor.execute_upload(
         argv=argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -330,7 +322,7 @@ def test_large_file_upload(gitlab_client, artifact_manager, project_path):
     # Execute upload via direct module invocation
     upload_result = executor.execute_upload(
         argv=argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
@@ -402,7 +394,7 @@ def test_multiple_files_with_different_sizes(
     # Execute upload
     upload_result = executor.execute_upload(
         argv=argv,
-        env_vars={"GITLAB_TOKEN": _get_gitlab_token()},
+        env_vars={"GITLAB_TOKEN": os.environ.get("GITLAB_TOKEN")},
         use_json_output=True,
     )
 
