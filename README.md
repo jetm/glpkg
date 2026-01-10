@@ -142,6 +142,64 @@ uv run mypy src/
 uv run ruff format src/
 ```
 
+### Versioning
+
+This project uses [semantic versioning](https://semver.org/) (major.minor.patch) with [bump-my-version](https://github.com/callowayproject/bump-my-version) for automated version management.
+
+```bash
+# Install dev dependencies (includes bump-my-version)
+uv pip install -e ".[dev]"
+
+# Bump patch version (bug fixes): 0.1.0 → 0.1.1
+uv run bump-my-version bump patch
+
+# Bump minor version (new features): 0.1.0 → 0.2.0
+uv run bump-my-version bump minor
+
+# Bump major version (breaking changes): 0.1.0 → 1.0.0
+uv run bump-my-version bump major
+```
+
+Running `bump-my-version bump` automatically:
+- Updates the version in `pyproject.toml` and `src/gitlab_pkg_upload/__init__.py`
+- Creates a git commit with the version change
+- Creates a git tag (format: `v1.2.3`)
+
+#### Release Workflow
+
+```bash
+# 1. Bump version (e.g., patch for bug fix)
+uv run bump-my-version bump patch
+
+# 2. Push changes and tags
+git push && git push --tags
+
+# 3. Create GitHub release at https://github.com/your-org/gitlab-pkg-upload/releases/new
+# 4. PyPI publication happens automatically via GitHub Actions
+```
+
+To create a GitHub release:
+1. Navigate to the repository's Releases page
+2. Click "Create a new release"
+3. Select the version tag created by bump-my-version
+4. Add release notes describing changes
+5. Publish the release
+
+Publishing a GitHub release automatically triggers the `.github/workflows/publish.yml` workflow to publish to PyPI.
+
+#### Verification
+
+```bash
+# Check that version numbers match in both files
+grep -r "0.1.0" pyproject.toml src/gitlab_pkg_upload/__init__.py
+
+# Test bump-my-version dry run
+uv run bump-my-version bump patch --dry-run --verbose
+
+# Verify git tags
+git tag -l
+```
+
 ## Project Structure
 
 ```

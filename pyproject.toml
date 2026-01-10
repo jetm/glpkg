@@ -30,9 +30,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "ruff",
+    "bump-my-version",
     "mypy",
     "pre-commit",
+    "ruff",
 ]
 test = [
     "pytest",
@@ -81,3 +82,22 @@ markers = [
     "slow: Slow-running tests",
     "timeout: Timeout for test execution (provided by pytest-timeout)",
 ]
+
+[tool.bumpversion]
+current_version = "0.1.0"
+commit = true
+tag = true
+tag_name = "v{new_version}"
+message = "Bump version: {current_version} → {new_version}"
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = "version = \"{current_version}\""
+replace = "version = \"{new_version}\""
+
+[[tool.bumpversion.files]]
+filename = "src/gitlab_pkg_upload/__init__.py"
+search = "__version__ = \"{current_version}\""
+replace = "__version__ = \"{new_version}\""
