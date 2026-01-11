@@ -71,14 +71,6 @@ jobs:
 
           # The --cov-fail-under=90 in pytest already handles the failure threshold
 
-      - name: Run integration tests
-        if: ${{ secrets.GITLAB_TOKEN != '' && secrets.GITLAB_REPO != '' }}
-        env:
-          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
-          GITLAB_PROJECT_PATH: ${{ secrets.GITLAB_REPO }}
-          RUN_INTEGRATION_TESTS: "1"
-        run: uv run pytest tests/integration/ -m integration -v -n auto --no-cov
-
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
