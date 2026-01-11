@@ -1,6 +1,6 @@
 """glpkg - GitLab Generic Package Upload Tool."""
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 # Export key models and exceptions for convenience
 from .duplicate_detector import DuplicateDetector
