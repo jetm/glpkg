@@ -37,9 +37,9 @@ This is a self-contained executable that requires no installation -
 just Python 3.11+.
 
 ```bash
-# Download the latest release
+# Download the latest release (replace VERSION with desired version, e.g., v0.1.1)
 curl -L -o glpkg.pyz \
-  https://github.com/your-org/glpkg/releases/latest/download/glpkg.pyz
+  https://github.com/jetm/glpkg/releases/download/VERSION/glpkg-VERSION.pyz
 
 # Make it executable
 chmod +x glpkg.pyz
@@ -70,7 +70,7 @@ glpkg --help
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/glpkg.git
+git clone https://github.com/jetm/glpkg.git
 cd glpkg
 
 # Install in development mode with uv
@@ -137,7 +137,7 @@ For detailed contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash
 # Clone and install dependencies
-git clone https://github.com/your-org/glpkg.git
+git clone https://github.com/jetm/glpkg.git
 cd glpkg
 uv sync --all-extras
 
