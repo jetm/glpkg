@@ -54,6 +54,22 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+extract_version() {
+    local version
+    version=$(grep -E '^version = "' "${PROJECT_ROOT}/pyproject.toml" | sed 's/version = "\([^"]*\)"/\1/')
+
+    # Strip any leading 'v' character
+    version="${version#v}"
+
+    # Validate version contains only numbers and dots
+    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        log_error "Invalid version format: $version"
+        exit 1
+    fi
+
+    echo "$version"
+}
+
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -99,7 +115,9 @@ build_with_shiv() {
         exit 1
     fi
 
-    local output_file="${PROJECT_ROOT}/${OUTPUT_DIR}/glpkg.pyz"
+    local version
+    version=$(extract_version)
+    local output_file="${PROJECT_ROOT}/${OUTPUT_DIR}/glpkg-v${version}.pyz"
     local temp_dir
     temp_dir=$(mktemp -d)
 
@@ -139,7 +157,9 @@ build_with_pex() {
         exit 1
     fi
 
-    local output_file="${PROJECT_ROOT}/${OUTPUT_DIR}/glpkg.pex"
+    local version
+    version=$(extract_version)
+    local output_file="${PROJECT_ROOT}/${OUTPUT_DIR}/glpkg-v${version}.pex"
 
     log_info "Creating .pex archive..."
     ${pex_cmd} \
@@ -179,5 +199,5 @@ esac
 log_info "Build complete!"
 echo ""
 echo "To test the built binary:"
-echo "  python ${OUTPUT_DIR}/glpkg.pyz --version"
-echo "  python ${OUTPUT_DIR}/glpkg.pyz --help"
+echo "  python ${OUTPUT_DIR}/glpkg-v*.pyz --version"
+echo "  python ${OUTPUT_DIR}/glpkg-v*.pyz --help"

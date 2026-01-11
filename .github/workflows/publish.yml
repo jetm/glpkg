@@ -36,6 +36,12 @@ jobs:
       - name: Build .pyz universal binary
         run: bash scripts/build_pyz.sh --tool shiv --output-dir dist
 
+      - name: Extract version from pyproject.toml
+        run: |
+          VERSION=$(grep -E '^version = "' pyproject.toml | sed 's/version = "\([^"]*\)"/\1/')
+          VERSION=$(echo $VERSION | sed 's/^v//')
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+
       - name: List built artifacts
         run: ls -la dist/
 
@@ -43,7 +49,7 @@ jobs:
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/glpkg.pyz
+          files: dist/glpkg-v*.pyz
           fail_on_unmatched_files: true
 
       - name: Remove .pyz from dist for PyPI
