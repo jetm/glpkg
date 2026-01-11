@@ -46,6 +46,9 @@ jobs:
           files: dist/glpkg.pyz
           fail_on_unmatched_files: true
 
+      - name: Remove .pyz from dist for PyPI
+        run: rm -f dist/*.pyz dist/*.pex
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
