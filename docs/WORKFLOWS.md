@@ -110,14 +110,13 @@ including the universal `.pyz` binary.
 - Package building: Creates wheel and sdist with `python -m build`
 - Universal binary: Builds `.pyz` file using shiv for standalone execution
 - GitHub release assets: Uploads `.pyz` binary to release assets
-- PyPI publishing: Publishes to PyPI using token authentication
+- PyPI publishing: Publishes to PyPI using OIDC trusted publishing
 - Package name: Published as `glpkg-cli` on PyPI
 
 **Secrets:**
 
-| Secret           | Required | Description                           |
-| ---------------- | -------- | ------------------------------------- |
-| `PYPI_API_TOKEN` | Yes      | PyPI API token with upload permission |
+None required. PyPI authentication uses OIDC trusted publishing configured
+in the PyPI project settings.
 
 **Artifacts:**
 
@@ -132,7 +131,8 @@ including the universal `.pyz` binary.
   `bash scripts/build_pyz.sh --tool shiv --output-dir dist`
 - Verify package builds:
   `uv pip install build --system && python -m build`
-- PyPI token issues: Ensure token has "Upload packages" permission
+- PyPI OIDC issues: Verify trusted publishing is configured in PyPI project
+  settings and workflow has `id-token: write` permission
 - Build script issues: Review `scripts/build_pyz.sh` for shiv configuration
 - Version conflicts: Check version in `pyproject.toml` doesn't exist on PyPI
 - Local testing: Install built wheel with `pip install dist/*.whl`
@@ -206,25 +206,3 @@ Consider these alternatives:
 - Use a dedicated job with conditional execution based on repository context
 - Use environment-based checks with separate environments
 - Restrict integration tests to specific branches
-
-### PyPI Trusted Publishing
-
-The current workflow uses token-based authentication (`PYPI_API_TOKEN`).
-Consider migrating to PyPI trusted publishing (OIDC) for enhanced security.
-
-**Benefits:**
-
-- Eliminates need for long-lived API tokens
-- No secret rotation required
-- Stronger authentication through GitHub's OIDC provider
-
-**Migration steps:**
-
-1. Configure the PyPI project for trusted publishing in PyPI settings
-2. Add the GitHub repository as a trusted publisher
-3. Update workflow to use `pypa/gh-action-pypi-publish` with OIDC
-4. Remove the `PYPI_API_TOKEN` secret after verification
-
-See [PyPI Trusted Publishing documentation][pypi-trusted] for details.
-
-[pypi-trusted]: https://docs.pypi.org/trusted-publishers/

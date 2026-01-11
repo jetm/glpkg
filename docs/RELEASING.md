@@ -206,7 +206,7 @@ After publishing a release:
 
 ### PyPI Publish Fails
 
-- Verify `PYPI_API_TOKEN` secret is configured in GitHub repository settings
+- Verify the workflow has `id-token: write` permission for OIDC authentication
 - Check that trusted publishing is configured on PyPI for this repository
 - Review the GitHub Actions logs for specific error messages
 
