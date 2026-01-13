@@ -148,6 +148,20 @@ uv run pre-commit install
 uv run pytest tests/unit/
 ```
 
+### Q&A
+
+**Why not use the glab tool?**
+
+The `glab` CLI tool does not properly support uploading to the Generic Package
+Registry. See [gitlab-org/cli#7421](https://gitlab.com/gitlab-org/cli/-/issues/7421)
+for details.
+
+**Why not contribute this feature to glab?**
+
+For several reasons. I wanted to gain the experience of creating a tool from
+scratch, learn more about Python and its ecosystem, and understand GitHub CI
+better. GitLab is too slow at reviewing changes.
+
 ### Documentation
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Development setup and guidelines
