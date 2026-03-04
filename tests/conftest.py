@@ -56,9 +56,7 @@ class GitLabTestClient:
     Updated for parallel execution with thread-safe rate limiting.
     """
 
-    def __init__(
-        self, gitlab_url: str = "https://gitlab.com", token: Optional[str] = None
-    ):
+    def __init__(self, gitlab_url: str = "https://gitlab.com", token: Optional[str] = None):
         """
         Initialize GitLab test client.
 
@@ -149,12 +147,8 @@ class GitLabTestClient:
 
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         random_suffix = secrets.token_hex(4)
-        worker_suffix = (
-            self.worker_id.replace("gw", "w") if self.worker_id != "main" else "main"
-        )
-        unique_package_name = (
-            f"test-{package_name}-{timestamp}-{worker_suffix}-{random_suffix}"
-        )
+        worker_suffix = self.worker_id.replace("gw", "w") if self.worker_id != "main" else "main"
+        unique_package_name = f"test-{package_name}-{timestamp}-{worker_suffix}-{random_suffix}"
 
         # Track for cleanup
         package_key = f"{unique_package_name}:{version}"
@@ -221,8 +215,7 @@ class GitLabTestClient:
                     pkg_file.file_name == filename
                     or pkg_file.file_name.endswith(f"/{filename}")
                     or filename.endswith(f"/{pkg_file.file_name}")
-                    or pkg_file.file_name.replace("/", "_")
-                    == filename.replace("/", "_")
+                    or pkg_file.file_name.replace("/", "_") == filename.replace("/", "_")
                 )
 
                 if file_matches:
@@ -260,9 +253,7 @@ class GitLabTestClient:
             print(f"Upload verification failed for {filename}: {e}")
             return False
 
-    def get_download_url(
-        self, package_name: str, version: str, filename: str
-    ) -> Optional[str]:
+    def get_download_url(self, package_name: str, version: str, filename: str) -> Optional[str]:
         """
         Get the download URL for a specific file in a package.
 
@@ -325,9 +316,7 @@ class GitLabTestClient:
                         break
 
             if not target_file:
-                print(
-                    f"File {filename} not found in package {package_name} version {version}"
-                )
+                print(f"File {filename} not found in package {package_name} version {version}")
                 return None
 
             # Construct download URL
@@ -370,9 +359,7 @@ class GitLabTestClient:
             self.rate_limiter.acquire()
 
             # Download file
-            response = requests.get(
-                download_url, headers={"PRIVATE-TOKEN": self.token}, timeout=30
-            )
+            response = requests.get(download_url, headers={"PRIVATE-TOKEN": self.token}, timeout=30)
             response.raise_for_status()
 
             # Calculate checksum
@@ -391,9 +378,7 @@ class GitLabTestClient:
         except Exception as e:
             # Special case: subdirectory files may not be downloadable via generic package API
             if "/" in filename:
-                print(
-                    f"Skipping verification for subdirectory file due to error: {filename}"
-                )
+                print(f"Skipping verification for subdirectory file due to error: {filename}")
                 return True
             print(f"Failed to download and verify {filename}: {e}")
             return False
@@ -426,9 +411,7 @@ class GitLabTestClient:
 
                 # Rate limit package list
                 self.rate_limiter.acquire()
-                packages = project.packages.list(
-                    package_name=package_name, get_all=True
-                )
+                packages = project.packages.list(package_name=package_name, get_all=True)
 
                 # Find the target package version
                 target_package = None
@@ -482,9 +465,7 @@ class ArtifactManager:
         worker_suffix = worker_id.replace("gw", "w") if worker_id != "main" else "main"
 
         if base_dir is None:
-            self.base_dir = Path(
-                tempfile.mkdtemp(prefix=f"pytest-gitlab-{worker_suffix}-")
-            )
+            self.base_dir = Path(tempfile.mkdtemp(prefix=f"pytest-gitlab-{worker_suffix}-"))
         else:
             self.base_dir = base_dir
 
@@ -870,8 +851,6 @@ def project_path():
     # Fallback to environment variable or skip
     project_path_env = os.environ.get("GITLAB_PROJECT_PATH")
     if not project_path_env:
-        pytest.skip(
-            "Could not auto-detect project path and GITLAB_PROJECT_PATH not set"
-        )
+        pytest.skip("Could not auto-detect project path and GITLAB_PROJECT_PATH not set")
 
     return project_path_env

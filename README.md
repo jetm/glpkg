@@ -6,7 +6,7 @@
 ![Docs](https://github.com/jetm/glpkg/actions/workflows/docs.yml/badge.svg)
 ![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)
 
-A CLI tool for uploading files to GitLab's Generic Package Registry.
+A CLI tool for uploading and listing files in GitLab's Generic Package Registry.
 
 ## Installation
 
@@ -110,6 +110,18 @@ glpkg --verbose upload --package-name my-package \
 # JSON output for CI/CD pipelines
 glpkg --json-output upload --package-name my-package \
   --package-version 1.0.0 --files file.tar.gz
+
+# List files in a package from a GitLab URL
+glpkg list --url https://gitlab.com/group/project/-/packages/12345
+
+# List files by package name and version
+glpkg list --package-name my-package --package-version 1.0.0
+
+# List all versions of a package
+glpkg list --package-name my-package
+
+# List with JSON output
+glpkg --json-output list --url https://gitlab.com/group/project/-/packages/12345
 ```
 
 ## Configuration
@@ -180,7 +192,8 @@ glpkg/
 │       ├── cli/
 │       │   ├── __init__.py
 │       │   ├── main.py         # Main CLI entry point
-│       │   └── upload.py       # Upload subcommand implementation
+│       │   ├── upload.py       # Upload subcommand implementation
+│       │   └── list_cmd.py     # List subcommand implementation
 │       ├── models.py           # Data models
 │       ├── uploader.py         # Upload logic
 │       ├── formatters.py       # Output formatting

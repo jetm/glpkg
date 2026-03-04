@@ -10,7 +10,10 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from glpkg.cli.list_cmd import PackageListResult, PackageVersionSummary
 
 from rich.console import Console
 from rich.status import Status
@@ -514,6 +517,110 @@ class OutputFormatter:
                 f"{replaced_count} replaced duplicates, "
                 f"{len(skipped_duplicates)} skipped duplicates"
             )
+
+    def format_list_output(self, result: PackageListResult | list[PackageVersionSummary]) -> None:
+        """Format and output package list results.
+
+        Args:
+            result: Either a PackageListResult (files in a specific version)
+                or a list of PackageVersionSummary (version overview).
+        """
+        if self.config.json_output:
+            self._format_list_json(result)
+        elif self.config.plain_output or not self.is_tty:
+            self._format_list_plain(result)
+        else:
+            self._format_list_rich(result)
+
+    def _format_human_size(self, size: int) -> str:
+        """Format byte size as human-readable string."""
+        for unit in ("B", "KB", "MB", "GB"):
+            if size < 1024:
+                if unit == "B":
+                    return f"{size} {unit}"
+                return f"{size:.1f} {unit}"
+            size /= 1024  # type: ignore[assignment]
+        return f"{size:.1f} TB"
+
+    def _format_list_rich(self, result: PackageListResult | list[PackageVersionSummary]) -> None:
+        """Format list output with rich console colors."""
+        if isinstance(result, list):
+            # Version summaries
+            self.console.print("\n[bold]Package versions[/bold]\n")
+            for vs in result:
+                self.console.print(
+                    f"  [cyan]{vs.version}[/cyan]  "
+                    f"{vs.file_count} file(s)  "
+                    f"[dim]{vs.created_at}[/dim]"
+                )
+            self.console.print(f"\n{len(result)} version(s) found")
+            return
+
+        file_count = len(result.files)
+        self.console.print(
+            f"\n[bold]Package:[/bold] {result.package_name} "
+            f"v{result.version} ({file_count} file(s))\n"
+        )
+        for f in result.files:
+            sha_short = f.sha256[:12] + "..." if f.sha256 else "n/a"
+            self.console.print(
+                f"  [cyan]{f.file_name}[/cyan]  "
+                f"{self._format_human_size(f.size)}  "
+                f"[dim]{f.created_at}[/dim]  "
+                f"sha256:{sha_short}"
+            )
+            self.console.print(f"    [blue]{f.download_url}[/blue]")
+
+    def _format_list_plain(self, result: PackageListResult | list[PackageVersionSummary]) -> None:
+        """Format list output as plain ASCII text."""
+        if isinstance(result, list):
+            print("\nPackage versions\n")
+            for vs in result:
+                print(f"  {vs.version}  {vs.file_count} file(s)  {vs.created_at}")
+            print(f"\n{len(result)} version(s) found")
+            return
+
+        file_count = len(result.files)
+        print(f"\nPackage: {result.package_name} v{result.version} ({file_count} file(s))\n")
+        for f in result.files:
+            sha_short = f.sha256[:12] + "..." if f.sha256 else "n/a"
+            print(
+                f"  {f.file_name}  {self._format_human_size(f.size)}  "
+                f"{f.created_at}  sha256:{sha_short}"
+            )
+            print(f"    {f.download_url}")
+
+    def _format_list_json(self, result: PackageListResult | list[PackageVersionSummary]) -> None:
+        """Format list output as JSON."""
+        if isinstance(result, list):
+            data = {
+                "versions": [
+                    {
+                        "version": vs.version,
+                        "package_id": vs.package_id,
+                        "file_count": vs.file_count,
+                        "created_at": vs.created_at,
+                    }
+                    for vs in result
+                ]
+            }
+        else:
+            data = {
+                "package_name": result.package_name,
+                "version": result.version,
+                "package_id": result.package_id,
+                "files": [
+                    {
+                        "file_name": f.file_name,
+                        "size": f.size,
+                        "sha256": f.sha256,
+                        "download_url": f.download_url,
+                        "created_at": f.created_at,
+                    }
+                    for f in result.files
+                ],
+            }
+        print(json.dumps(data, indent=2))
 
     def create_progress_spinner(self, message: str) -> Status:
         """Create a progress spinner for long-running operations.

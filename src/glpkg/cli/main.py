@@ -283,9 +283,11 @@ For subcommand help:
     )
 
     # Register subcommands
+    from glpkg.cli.list_cmd import register_list_command
     from glpkg.cli.upload import register_upload_command
 
     register_upload_command(subparsers)
+    register_list_command(subparsers)
 
     return parser
 
