@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "glpkg-cli"
-version = "0.1.1"
+version = "0.1.2"
 description = "A CLI tool for uploading files to GitLab's Generic Package Registry"
 authors = [{name = "Javier Tia"}]
 license = "MIT"
@@ -106,7 +106,7 @@ exclude_lines = [
 ]
 
 [tool.bumpversion]
-current_version = "0.1.1"
+current_version = "0.1.2"
 commit = true
 tag = true
 tag_name = "v{new_version}"
