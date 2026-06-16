@@ -6,6 +6,9 @@
 ![Docs](https://github.com/jetm/glpkg/actions/workflows/docs.yml/badge.svg)
 ![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)
 
+> [!IMPORTANT]
+> **This repository is archived.** The `upload` and `list` functionality has been merged into [glab](https://gitlab.com/gitlab-org/cli) via [MR !3393](https://gitlab.com/gitlab-org/cli/-/merge_requests/3393). Use `glab` instead of `glpkg`.
+
 A CLI tool for uploading and listing files in GitLab's Generic Package Registry.
 
 ## Installation
@@ -164,9 +167,7 @@ uv run pytest tests/unit/
 
 **Why not use the glab tool?**
 
-The `glab` CLI tool does not properly support uploading to the Generic Package
-Registry. See [gitlab-org/cli#7421](https://gitlab.com/gitlab-org/cli/-/issues/7421)
-for details.
+This tool was written when `glab` did not properly support uploading to the Generic Package Registry (see [gitlab-org/cli#7421](https://gitlab.com/gitlab-org/cli/-/issues/7421)). That gap has since been closed - the functionality was merged in [MR !3393](https://gitlab.com/gitlab-org/cli/-/merge_requests/3393).
 
 **Why not contribute this feature to glab?**
 
